@@ -147,3 +147,14 @@ class ApiClient:
 
     def get_workflow_report(self, execution_id: str) -> dict:
         return self._request("GET", f"/api/v1/workflows/executions/{execution_id}/report")
+
+    # -- approvals -----------------------------------------------------------------
+
+    def list_pending_approvals(self) -> list[dict]:
+        return self._request("GET", "/api/v1/approvals")
+
+    def decide_approval(self, execution_id: str, decision: str, reviewer: str | None = None, comments: str | None = None) -> dict:
+        return self._request(
+            "POST", f"/api/v1/approvals/{execution_id}/decide",
+            json={"decision": decision, "reviewer": reviewer, "comments": comments},
+        )

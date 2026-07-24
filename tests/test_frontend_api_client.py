@@ -358,3 +358,31 @@ def test_get_workflow_report_calls_the_right_endpoint(monkeypatch):
     monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
     client = ApiClient(base_url="http://test")
     assert client.get_workflow_report("exec-1") == {"sections": {}}
+
+
+def test_list_pending_approvals_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/approvals"
+        return httpx.Response(200, json=[{"execution_id": "exec-1"}])
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.list_pending_approvals() == [{"execution_id": "exec-1"}]
+
+
+def test_decide_approval_posts_decision_reviewer_and_comments(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"status": "completed"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.decide_approval("exec-1", "approve", reviewer="alice", comments="Looks good.")
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/approvals/exec-1/decide"
+    assert captured["json"] == {"decision": "approve", "reviewer": "alice", "comments": "Looks good."}
