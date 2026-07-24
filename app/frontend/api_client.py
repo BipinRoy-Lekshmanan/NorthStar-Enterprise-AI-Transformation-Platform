@@ -1,0 +1,79 @@
+"""Thin HTTP client for the Northstar platform API (Milestone 7).
+
+The *only* module in the Streamlit frontend that knows the backend URL
+or API key -- every page calls a method here, never `httpx` directly.
+Raises `ApiClientError` (carrying the server's error code/message when
+available) rather than letting a raw connection/HTTP exception reach a
+page; pages catch this one exception type and render a friendly banner.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+
+DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_TIMEOUT_SECONDS = 30.0
+
+
+class ApiClientError(Exception):
+    def __init__(self, message: str, status_code: int | None = None, code: str | None = None):
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.code = code
+
+
+class ApiClient:
+    def __init__(
+        self, base_url: str = DEFAULT_BASE_URL, api_key: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.timeout = timeout
+
+    def _headers(self) -> dict[str, str]:
+        return {"X-API-Key": self.api_key} if self.api_key else {}
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> dict:
+        url = f"{self.base_url}{path}"
+        try:
+            response = httpx.request(method, url, headers=self._headers(), timeout=self.timeout, **kwargs)
+        except httpx.ConnectError as exc:
+            raise ApiClientError(f"Could not connect to the API at {self.base_url}. Is it running?") from exc
+        except httpx.TimeoutException as exc:
+            raise ApiClientError(f"Request to {path} timed out after {self.timeout}s.") from exc
+
+        if response.status_code >= 400:
+            self._raise_for_error(response)
+
+        if response.status_code == 204 or not response.content:
+            return {}
+        return response.json()
+
+    def _raise_for_error(self, response: httpx.Response) -> None:
+        message = response.text
+        code = None
+        try:
+            body = response.json()
+            error = body.get("error", {})
+            message = error.get("message", response.text)
+            code = error.get("code")
+        except Exception:
+            pass
+        raise ApiClientError(message, status_code=response.status_code, code=code)
+
+    # -- health / auth -----------------------------------------------------------------
+
+    def health(self) -> dict:
+        return self._request("GET", "/api/v1/health")
+
+    def current_user(self) -> dict:
+        return self._request("GET", "/api/v1/auth/me")
+
+    # -- query -----------------------------------------------------------------
+
+    def ask_query(self, **payload: Any) -> dict:
+        return self._request("POST", "/api/v1/query", json=payload)
