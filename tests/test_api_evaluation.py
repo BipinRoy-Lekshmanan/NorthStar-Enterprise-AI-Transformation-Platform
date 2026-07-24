@@ -160,6 +160,20 @@ def test_invalid_category_returns_422(client):
     assert response.status_code == 422
 
 
+def test_triggering_a_run_records_an_audit_event(client, tmp_path):
+    from app.audit.store import AuditStore
+
+    executed = client.post("/api/v1/evaluation/runs", json={"category": "rag"}, headers=ENGINEER_HEADERS)
+    run_id = executed.json()["run_id"]
+
+    store = AuditStore(tmp_path / "audit_log")
+    events = store.list_events()
+    assert len(events) == 1
+    assert events[0].action == "evaluation_run_triggered"
+    assert events[0].actor == "e"
+    assert events[0].resource_id == run_id
+
+
 def test_a_run_is_persisted_and_listed(client):
     executed = client.post("/api/v1/evaluation/runs", json={"category": "workflows"}, headers=ENGINEER_HEADERS)
     run_id = executed.json()["run_id"]

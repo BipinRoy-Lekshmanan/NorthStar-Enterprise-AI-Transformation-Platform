@@ -8,9 +8,10 @@ router). Viewing run history is viewer-level.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.api.dependencies.services import (
+    get_audit_store,
     get_evaluation_run_store,
     get_rag_service,
     get_workflow_engine,
@@ -24,6 +25,8 @@ from app.api.schemas.evaluation import (
     build_evaluation_run_summary_out,
 )
 from app.api.services.evaluation_service import get_run, list_runs, run_and_save_evaluation
+from app.audit.logger import AuditContext
+from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
@@ -40,12 +43,16 @@ router = APIRouter()
 )
 def run_evaluation_route(
     body: RunEvaluationRequest,
+    request: Request,
     store: EvaluationRunStore = Depends(get_evaluation_run_store),
     service: RagService = Depends(get_rag_service),
     engine: WorkflowEngine = Depends(get_workflow_engine),
-    _user: User = Depends(require_role(Role.ENGINEER)),
+    audit_store: AuditStore = Depends(get_audit_store),
+    user: User = Depends(require_role(Role.ENGINEER)),
 ) -> EvaluationRunDetailOut:
-    run = run_and_save_evaluation(store, body.category, service=service, engine=engine)
+    request_id = getattr(request.state, "request_id", None)
+    audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
+    run = run_and_save_evaluation(store, body.category, service=service, engine=engine, audit=audit)
     return build_evaluation_run_detail_out(run)
 
 

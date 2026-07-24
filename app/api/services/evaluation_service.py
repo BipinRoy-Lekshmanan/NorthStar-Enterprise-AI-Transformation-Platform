@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.audit.logger import AuditContext, record_from_context
 from app.evaluation.run_models import EvaluationRun
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
@@ -74,13 +75,17 @@ def run_workflow_evaluation(engine: WorkflowEngine, dataset_path: Path | None = 
 
 def run_and_save_evaluation(
     store: EvaluationRunStore, category: str, *, service: RagService | None = None,
-    engine: WorkflowEngine | None = None,
+    engine: WorkflowEngine | None = None, audit: AuditContext | None = None,
 ) -> EvaluationRun:
     if category == "workflows":
         run = run_workflow_evaluation(engine)
     else:
         run = run_rag_evaluation(service)
     store.save(run)
+    record_from_context(
+        audit, action="evaluation_run_triggered", resource_type="evaluation_run", resource_id=run.run_id,
+        metadata={"category": run.category, "total_cases": run.total_cases, "passed_cases": run.passed_cases},
+    )
     return run
 
 
