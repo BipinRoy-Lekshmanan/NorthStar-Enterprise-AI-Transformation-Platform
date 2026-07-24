@@ -27,3 +27,34 @@
 - **Repo is a standalone git repository** nested inside
   `C:\Users\bipin\projects\` (separate from whatever the parent folder
   tracks), pushed to `github.com/BipinRoy-Lekshmanan/NorthStar-Enterprise-AI-Transformation-Platform`.
+
+## Milestone 2 — Semantic Indexing & Retrieval
+
+- **Local vector store, not FAISS/Chroma**: numpy arrays + JSON metadata,
+  persisted under the pre-existing (previously empty) `vector_store/`
+  directory. Chosen over FAISS/ChromaDB — no new heavy dependency, and a
+  linear scan is plenty fast at this KB's scale (hundreds–low thousands
+  of chunks). Swappable later behind the `VectorStore` protocol.
+- **Two embedding providers behind one `EmbeddingProvider` protocol**:
+  `LocalHashingEmbeddingProvider` (default) is a dependency-free, offline,
+  deterministic signed-feature-hashing bag-of-words embedder — chosen so
+  the whole pipeline (including all tests) runs with zero API keys and
+  zero network calls. `OpenAIEmbeddingProvider` is available for real
+  semantic quality (`EMBEDDING_PROVIDER=openai`) and lazy-imports the
+  `openai` package so it's never required for the core install.
+- **Incremental indexing reuses Milestone 1's content-addressed
+  `chunk_id`** instead of separate change-tracking: sync is a plain set
+  diff (`current - existing` = add, `existing - current` = remove,
+  intersection = skip re-embedding). An edited chunk gets a new id, so
+  "update" falls out of add+remove for free.
+- **Vector store validates provider/model/dimension consistency on
+  reload** (`index_state.json`) and refuses to mix embeddings from a
+  different provider/model into the same store — switching
+  `EMBEDDING_PROVIDER` requires pointing `VECTOR_STORE_DIR` at a new
+  (empty) directory rather than silently corrupting search.
+- **Fixed a pre-existing bug**: `app/rag/_init_.py` (typo) → `__init__.py`,
+  same pattern as Milestone 1, now that `app/rag/retriever.py` is used.
+- **Windows console encoding**: the retriever CLI reconfigures stdout to
+  UTF-8 with `errors="replace"` -- discovered because
+  `16_Incident_Management.md` contains "✓" characters that crashed
+  `print()` under the default Windows cp1252 console codepage.

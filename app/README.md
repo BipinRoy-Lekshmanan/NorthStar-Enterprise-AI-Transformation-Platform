@@ -16,13 +16,30 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | `ingestion/pipeline.py` | `IngestionPipeline` — wires discovery → load → chunk → persist |
 | `embeddings/chunking.py` | `MarkdownChunker` — heading-aware, size/overlap-bounded chunking |
 
-See the [root README](../README.md) for how to run the pipeline and tests.
+## Implemented (Milestone 2)
+
+| Module | Purpose |
+|---|---|
+| `config/settings.py` | `RetrievalSettings.from_env()` — same file, same validation pattern as `IngestionSettings` |
+| `models/query.py` | `RetrievalQuery` (pydantic) |
+| `models/response.py` | `RetrievalResult`, `RetrievalDiagnostics`, `RetrievalResponse` (pydantic) |
+| `embeddings/vectorizer.py` | `EmbeddingProvider` protocol, structured errors, `LocalHashingEmbeddingProvider` (default, offline) |
+| `embeddings/openai_provider.py` | `OpenAIEmbeddingProvider` — lazy-imports `openai`, only needed when selected |
+| `embeddings/vector_store.py` | `VectorStore` protocol, `LocalVectorStore` (numpy + JSON, persisted to `vector_store/`) |
+| `embeddings/indexer.py` | `Indexer` — incremental sync (content-addressed `chunk_id` set-diff), CLI: `python -m app.embeddings.indexer` |
+| `rag/retriever.py` | `Retriever` — embed → search → rank + diagnostics, CLI: `python -m app.rag.retriever "<question>"` |
+
+See the [root README](../README.md) for how to run the pipeline, indexer,
+retriever, and tests.
 
 ## Placeholders (future milestones)
 
-Every other module here (`agents/`, `rag/`, `services/`, `api/`, `auth/`,
+Every other module here (`agents/`, `services/`, `api/`, `auth/`,
 `cache/`, `telemetry/`, `evaluation/`, `frontend/`, `prompts/`,
-`ingestion/pdf_loader.py`, `embeddings/vectorizer.py`,
-`embeddings/emdedding_service.py`, `embeddings/reranker.py`,
-`models/citation.py`, `models/query.py`, `models/response.py`) is empty
-scaffolding, not yet implemented. Do not assume any behavior from them.
+`ingestion/pdf_loader.py`, `embeddings/emdedding_service.py`,
+`embeddings/reranker.py`, `models/citation.py`,
+`rag/generator.py`, `rag/citation_engine.py`, `rag/context_builder.py`,
+`rag/hybrid_search.py`, `rag/pipeline.py`) is empty scaffolding, not yet
+implemented. In particular, everything in `rag/` besides `retriever.py`
+is reserved for a future milestone that adds LLM answer generation on
+top of Milestone 2's retrieval — do not assume any behavior from them.
