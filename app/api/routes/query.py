@@ -1,0 +1,62 @@
+"""Grounded query endpoint (Milestone 7).
+
+`POST /query` is a viewer-level capability ("ask grounded questions" is
+explicitly a viewer permission) supporting both manual advisor selection
+and automatic routing through the same request shape. A dedicated,
+engineer-level `POST /advisors/{advisor_id}/query` is added separately
+(see `app.api.routes.advisors`) for the distinct "run advisor queries"
+permission.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request
+
+from app.api.dependencies.services import get_audit_store, get_rag_service, get_rag_settings, get_router_settings
+from app.api.schemas.query import QueryRequest, QueryResponse, build_query_response
+from app.api.services.query_service import QueryFilters, ask_auto, ask_manual
+from app.audit.logger import AuditContext
+from app.audit.store import AuditStore
+from app.auth.dependencies import require_role
+from app.auth.roles import Role
+from app.auth.users import User
+from app.config.settings import RagSettings, RouterSettings
+from app.rag.pipeline import RagService
+
+router = APIRouter()
+
+
+@router.post("/query", summary="Ask a grounded question", tags=["Queries"], response_model=QueryResponse)
+def ask_question(
+    request: Request,
+    body: QueryRequest,
+    service: RagService = Depends(get_rag_service),
+    rag_settings: RagSettings = Depends(get_rag_settings),
+    router_settings: RouterSettings = Depends(get_router_settings),
+    audit_store: AuditStore = Depends(get_audit_store),
+    user: User = Depends(require_role(Role.VIEWER)),
+) -> QueryResponse:
+    filters = QueryFilters(
+        document_id=body.filters.document_ids[0] if body.filters.document_ids else None,
+        source_file=body.filters.source_files[0] if body.filters.source_files else None,
+    )
+    request_id = getattr(request.state, "request_id", None)
+    audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
+
+    if body.advisor == "auto":
+        result = ask_auto(
+            service, rag_settings, router_settings, body.question, filters,
+            max_supporting_advisors=body.max_supporting_advisors,
+            include_diagnostics=body.include_diagnostics,
+            include_context=body.include_retrieved_context,
+            audit=audit,
+        )
+    else:
+        result = ask_manual(
+            service, body.question, body.advisor, filters,
+            include_diagnostics=body.include_diagnostics,
+            include_context=body.include_retrieved_context,
+            audit=audit,
+        )
+
+    return build_query_response(result, request_id)

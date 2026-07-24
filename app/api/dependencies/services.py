@@ -1,0 +1,38 @@
+"""Dependency-injection accessors for process-wide singletons (Milestone 7).
+
+Every singleton (`RagService`, settings objects, and -- added in later
+steps -- `WorkflowEngine`/stores) is built exactly once, at FastAPI
+startup (see the `lifespan` in `app.api.main`), and stored on
+`request.app.state`. Using `Depends()`-based accessors here (rather than
+importing module-level globals) lets tests override them via FastAPI's
+own `app.dependency_overrides`, injecting a `FakeModelProvider`-backed
+service per test instead of monkeypatching.
+"""
+
+from __future__ import annotations
+
+from fastapi import Request
+
+from app.audit.store import AuditStore
+from app.config.settings import RagSettings, RetrievalSettings, RouterSettings
+from app.rag.pipeline import RagService
+
+
+def get_rag_service(request: Request) -> RagService:
+    return request.app.state.rag_service
+
+
+def get_audit_store(request: Request) -> AuditStore:
+    return request.app.state.audit_store
+
+
+def get_rag_settings(request: Request) -> RagSettings:
+    return request.app.state.rag_settings
+
+
+def get_retrieval_settings(request: Request) -> RetrievalSettings:
+    return request.app.state.retrieval_settings
+
+
+def get_router_settings(request: Request) -> RouterSettings:
+    return request.app.state.router_settings
