@@ -3,8 +3,9 @@
 Pytest suite for the ingestion pipeline (Milestone 1), the semantic
 indexing/retrieval layer (Milestone 2), the grounded RAG assistant
 (Milestone 3), the pluggable advisor framework (Milestone 4), the
-advisor router + controlled multi-advisor synthesis (Milestone 5), and
-enterprise workflow orchestration (Milestone 6).
+advisor router + controlled multi-advisor synthesis (Milestone 5),
+enterprise workflow orchestration (Milestone 6), and the Enterprise AI
+Platform API + Streamlit UI (Milestone 7).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -47,12 +48,34 @@ python -m pytest
 | `test_workflow_e2e.py` | One true end-to-end test per catalog workflow (all 5) against a fixture KB covering every advisor document, confirming each workflow's expected pause behavior, citation presence, and (for Production Readiness Review) the `INSUFFICIENT_EVIDENCE` recommendation |
 | `test_workflow_evaluator.py` | Real dataset loads with ≥10 cases covering all 5 workflows, a case passes when expectations match, fails when a recommendation or expected stage doesn't match, `run_evaluation()`/`_rate()` aggregate correctly |
 | `test_evaluate_cli.py` | `app.evaluation.rag_evaluator.main()`'s `--category` dispatch: `--category workflows` defers entirely to `app.evaluation.workflow_evaluator` and produces its output; the default (`rag`) still runs the Milestone 3 dataset unchanged |
+| `test_auth.py` | `Role`/`role_at_least()`, `User`/`load_users()` (missing file, malformed JSON, invalid role, duplicate key), `ApiSettings`/`AuthSettings` env parsing and validation |
+| `test_audit.py` | `AuditEvent` defaults, `AuditStore` record/list/limit/directory-creation, `record_from_context()` with/without a context |
+| `test_evaluation_run_store.py` | `EvaluationRun.pass_rate`, category/status validation, `EvaluationRunStore` save/load/list round-trips, corrupt/missing-run errors |
+| `test_export.py` | Envelope building for query answers and workflow reports, Markdown rendering (sections/findings/citations/disclaimer), JSON rendering round-trips |
+| `test_api_foundation.py` | App metadata, `/health`, OpenAPI docs availability |
+| `test_api_errors.py` | Every domain-exception → `(status, ErrorCode)` mapping, request-id/timing headers, no stack-trace leakage |
+| `test_api_pagination.py` | `validate_pagination()`/`paginate_slice()` bounds |
+| `test_api_auth.py` | `require_role()` unit tests, `GET /auth/me`, startup failure on a missing/malformed users file |
+| `test_api_query.py` | Manual/auto query, filters, `routing_mode` validation, diagnostics, request-id correlation, audit event, `?format=markdown` |
+| `test_api_advisors.py` | List/detail/route-preview/direct-query with RBAC, unknown-advisor 404 |
+| `test_api_knowledge.py` | List/filter/paginate/detail/stats/search, admin-only ingest/index/rebuild, rebuild's exact-confirmation-phrase requirement |
+| `test_api_workflows.py` | List/describe/examples/execute/list-executions/get/resume/cancel/report against the real `architecture_review` catalog workflow, `WORKFLOW_AWAITING_APPROVAL`/`WORKFLOW_ALREADY_COMPLETED` preconditions, `?format=markdown` |
+| `test_api_approvals.py` | Pending queue, required-comment enforcement on reject/request_changes, RBAC (reviewer-only decisions), `APPROVAL_ERROR` on an already-decided execution |
+| `test_api_evaluation.py` | RBAC on triggering a run, category dispatch, persistence/listing/filtering, audit event |
+| `test_api_platform.py` | Detailed health (real retrieval call), administrator-only audit log view, `limit` param |
+| `test_api_safety.py` | CORS headers/preflight, request-size-limit rejection, rate-limit rejection (independent per client) |
+| `test_frontend_api_client.py` | Every `ApiClient` method against a monkeypatched `httpx.request` — headers, error parsing, no real network |
+| `test_frontend_session.py` | `st.session_state` helpers in Streamlit's "bare mode," no running server needed |
 
-All Milestone 2-6 tests use `LocalHashingEmbeddingProvider` and
+All Milestone 2-7 tests use `LocalHashingEmbeddingProvider` and
 `FakeModelProvider` — no network calls, no API key required, same
 offline-test philosophy as Milestone 1. `test_openai_llm_provider.py` is
 the one exception that touches provider-specific code, and it does so
-via a fake module, not the real SDK.
+via a fake module, not the real SDK. Milestone 7's API tests use
+FastAPI's `TestClient` + `app.dependency_overrides` (never
+monkeypatching) to inject fake-provider-backed services and tmp_path
+fixture KBs/stores per test — never the real (large) knowledge base or
+its real vector/workflow/audit/evaluation-run stores.
 
 `pytest.ini` sets `pythonpath = .` so `import app...` resolves without an
 installed package.

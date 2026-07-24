@@ -364,3 +364,131 @@
   a bare package, so a `__main__.py` is required; `cli.py` still holds
   all the actual argument parsing and formatting logic, same
   logic/formatting split as `app/rag/ask.py`.
+
+## Milestone 7 — Enterprise AI Platform (API + Web UI)
+
+- **Reused the pre-existing empty `app/api/` and `app/frontend/`
+  scaffolds** rather than inventing new top-level packages — both
+  already matched FastAPI's and Streamlit's own idiomatic layouts
+  (`dependencies/`, `middleware/`, `routes/`, `schemas/`;
+  `assets/`, `components/`, `pages/`) and had been present, unused,
+  since Milestone 1.
+- **`app/api/services/` is a new, distinct layer from the pre-existing
+  `app/services/`** — the latter is Milestone 3's low-level
+  model/embedding-provider-adapter layer; reusing the same name for the
+  new HTTP-facing facade layer would have been a false-friend
+  collision. `app/api/services/` is the HTTP-layer equivalent of what
+  every existing CLI already does one layer down: "argparse (or here,
+  FastAPI routing) + pure formatting/validation, zero business logic."
+- **Domain exceptions are mapped to HTTP status/error-code by a single
+  fixed `{ExceptionClass: (status, ErrorCode)}` table, registered once
+  at startup** (`app/api/errors.py`) — no route ever `try`/`except`s a
+  domain exception. This mirrors `app/workflows/cli.py` letting
+  `WorkflowEngineError` bubble to one top-level handler rather than
+  catching per-command. Two codes needed a genuinely new API-level
+  distinction the raw exception doesn't carry (`WORKFLOW_AWAITING_APPROVAL`
+  vs. `WORKFLOW_ALREADY_COMPLETED` — both raised by the engine as the
+  same `WorkflowEngineError`), so `app.api.services.workflow_service`/
+  `approval_service` check `WorkflowExecution.status` *proactively*
+  before calling the engine, instead of parsing the exception's message
+  string.
+- **`KeyError`-subclassing domain exceptions (`UnknownAdvisorError`,
+  `UnknownWorkflowError`) needed a small `_exception_message()` helper**
+  in `errors.py` — `KeyError.__str__` wraps its first arg in `repr()`,
+  producing a doubled-quoted message (`"'Unknown advisor x'"`) if
+  `str(exc)` were used directly; the helper reads `exc.args[0]` instead.
+- **Pydantic `field_validator`s that raise `ValueError` broke JSON
+  serialization of 422 responses** — `RequestValidationError.errors()`
+  includes a `ctx` key holding the raw exception object, which
+  `JSONResponse`'s `json.dumps` can't serialize. Fixed by stripping
+  `ctx` (keeping only `type`/`loc`/`msg`/`input`) before building the
+  response body, since `msg` already carries the human-readable text.
+- **RBAC is four hierarchical roles backed by a local, git-ignored JSON
+  file** (`data/auth/users.json`, committed template
+  `users.example.json`) — explicitly not full SSO/OAuth/SAML/LDAP, per
+  the milestone's own scope. `role_at_least()` plus dependency
+  composition order (`get_current_user` before `require_role`) makes
+  401-vs-403 fall out structurally rather than from an `if` branch.
+- **`/query` is viewer-tier; `/advisors/{id}/query` is engineer-tier** —
+  initially built both at engineer-tier, then corrected against the
+  spec's own permission table: "ask grounded questions" (viewer) and
+  "run advisor queries" (engineer) are two distinct permissions, not
+  one. No user correction prompted this — caught by re-reading the
+  spec's table before finalizing.
+- **A FastAPI `TestClient(app)` without a `with` block never triggers
+  the `lifespan`** — tests that need `app.state.X` must use `with
+  TestClient(app) as client:`; tests hitting only lifespan-independent
+  routes (`/health`) work either way. Discovered empirically, not
+  documented clearly in FastAPI's own docs at the version pinned here.
+- **Every new settings-backed singleton added to the lifespan needs its
+  own tmp_path override in tests, or it silently writes into the real
+  project directory** — hit twice (once for `AUDIT_LOG_DIR`, once
+  pre-emptively handled for `RetrievalSettings`/the vector store) before
+  becoming a standing checklist item for every subsequent singleton
+  (`WorkflowSettings`, `EvaluationSettings`).
+- **Route registration order matters for path collisions**:
+  `GET /workflows/executions` (literal) was originally registered
+  *after* `GET /workflows/{workflow_id}` (single path param) and got
+  silently swallowed — Starlette matches routes in registration order,
+  so `workflow_id="executions"` matched first and returned 404. Fixed
+  by moving every literal-segment route ahead of same-shape
+  path-param routes; caught by a genuinely failing test, not by
+  inspection.
+- **Knowledge document filtering re-runs `IngestionPipeline.run(persist=False)`
+  fresh on every request** rather than caching, because `Chunk` (the
+  vector-store-indexed model) lacks `owner`/`status`/`classification` —
+  only `LoadedDocument.metadata` (from re-reading frontmatter) has them.
+  The KB is small (42 files) so this is fast; a real production system
+  would cache this, but that's an explicit, documented tradeoff, not an
+  oversight.
+- **The "document domain" filter is derived as the top-level KB folder
+  name from `source_path`** (e.g. `04_Engineering`) rather than
+  fabricating a `domain` field that doesn't exist anywhere in the data
+  model — a real, non-invented proxy for a spec-requested filter that
+  had no backing field.
+- **`routing_mode` is accepted as a request field but validated to only
+  ever equal `"auto"`** — the spec's example payload implied multiple
+  selectable routing modes, but only one deterministic algorithm
+  (Milestone 5) exists. Rejecting any other value with a clear message
+  was chosen over either silently ignoring the field or fabricating
+  additional modes.
+- **The workflow input form is one generic, `input_schema`-driven
+  component** (`app/frontend/components/forms.py`), not 5 hand-built
+  forms — the real catalog only ever uses 3 field types (`string`,
+  `list`, `enum`), confirmed by inspecting every workflow's
+  `input_schema` before writing the renderer, so an unrecognized future
+  type falls back to a plain text field rather than crashing.
+- **Evaluation run persistence is a genuinely new capability, not a
+  refactor** — neither `rag_evaluator.py` nor `workflow_evaluator.py`
+  persisted anything before this milestone (both only printed to
+  stdout); `EvaluationRunStore` mirrors `WorkflowStore`'s exact shape
+  (one JSON file per run, temp-write-then-rename) rather than inventing
+  a new persistence pattern.
+- **Per-check pass rates in an evaluation run's `summary` are computed
+  generically** from whatever keys appear in each result's `checks`
+  dict, rather than hard-coding either evaluator's specific check
+  names — a future evaluator adding a new check needs no change to
+  `app.api.services.evaluation_service`.
+- **`?format=json|markdown` on `POST /query` and the workflow-report
+  endpoint, rather than separate endpoints** — same computed
+  answer/report, rendered two ways; returning a `PlainTextResponse`
+  directly bypasses FastAPI's `response_model` serialization cleanly
+  for the markdown case. Streamlit's download buttons call the API's
+  own `?format=markdown` endpoint (a second request) rather than
+  importing `app.export` directly into the frontend, keeping the
+  frontend a pure API client even though the export module is
+  technically pure Python with no I/O — this was a deliberate
+  architecture-boundary choice, not a technical necessity.
+- **The rate limiter and audit log are explicitly per-process/
+  in-memory-or-local-file, not distributed** — the milestone's own
+  scope says "a simple in-memory rate limiter," and a shared backend
+  (Redis, a database) would be premature infrastructure for a
+  single-process reference deployment. Documented as a limitation, not
+  silently assumed away.
+- **Found via live end-to-end validation, not unit tests**: evaluation
+  runs were the one significant action never audit-logged (every other
+  mutating action — ingestion, indexing, rebuild, questions, workflow
+  execute/resume/cancel, approval decisions — already was). The gap
+  only became visible by checking the actual audit trail after
+  triggering a real run against the live API, not from reading the
+  code in isolation.

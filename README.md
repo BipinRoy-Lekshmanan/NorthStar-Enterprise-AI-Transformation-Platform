@@ -20,7 +20,7 @@ observability. It is being built incrementally, milestone by milestone.
 | **4** | Pluggable advisor framework (10 domain advisors) | ✅ Complete |
 | **5** | Advisor router & controlled multi-advisor synthesis | ✅ Complete |
 | **6** | Enterprise workflow orchestration (5 review workflows) | ✅ Complete |
-| 7+ | UI/API, evaluation of advisor/workflow answer quality beyond deterministic checks | Not started |
+| **7** | Enterprise AI Platform: FastAPI + Streamlit, RBAC, audit, evaluation persistence, export | ✅ Complete |
 
 ## Milestone 1 — Knowledge Ingestion Foundation
 
@@ -1031,9 +1031,322 @@ invocations above produce identical output.
 
 ### Next milestone
 
-A thin API/UI layer, and evaluating advisor/workflow answer *quality*
-specifically (beyond the deterministic structural checks here), are
-still not implemented.
+See Milestone 7 below — it turns everything built through Milestone 6
+into a product: a FastAPI backend and a Streamlit web UI, with local
+RBAC, an audit trail, persisted evaluation history, and Markdown/JSON
+report export.
+
+## Milestone 7 — Enterprise AI Platform (API + Web UI)
+
+A FastAPI backend and a Streamlit frontend over everything built in
+Milestones 1–6 — **this is productization, not new intelligence**: no
+new retrieval, prompting, routing, or workflow logic is written. Every
+route and page is a thin wrapper over the unchanged ingestion,
+retrieval, RAG, advisor, routing, and workflow modules. No autonomous
+agents, recursive planning, unrestricted tool use, shell execution,
+production deployment actions, infrastructure modification, email/
+ticket creation, browser automation, external system writes, or full
+SSO/OAuth/SAML/LDAP.
+
+```mermaid
+flowchart TD
+    UI["Streamlit Frontend (app/frontend/)<br/>9 pages -- the only consumer of the API"]
+    UI -- "httpx, X-API-Key header" --> API
+
+    subgraph API["FastAPI Backend (app/api/)"]
+        direction TB
+        MW["Middleware: request-id/timing, CORS,<br/>rate limit, request-size limit"]
+        Auth["Auth: local API-key directory<br/>+ hierarchical RBAC (viewer < engineer < reviewer < administrator)"]
+        Routes["Routes (one file per tag):<br/>health, auth, query, advisors, knowledge,<br/>workflows, approvals, evaluation, platform"]
+        Services["app/api/services/ -- thin facades:<br/>validate input, call ONE Milestone 1-6 entry point,<br/>record an audit event, return plain data"]
+        Errors["errors.py -- one ApiError + a fixed<br/>domain-exception -> (status, code) table,<br/>registered once as exception handlers"]
+        MW --> Auth --> Routes --> Services
+        Routes -.-> Errors
+    end
+
+    Services --> Core
+
+    subgraph Core["Milestones 1-6 (unchanged)"]
+        direction LR
+        RagService --> AdvisorOrchestrator --> AdvisorRouter
+        WorkflowEngine
+    end
+
+    Core --> Data[("Knowledge base / VectorStore /<br/>WorkflowStore / EvaluationRunStore /<br/>AuditStore / users.json")]
+```
+
+```mermaid
+sequenceDiagram
+    actor User as Engineer (Streamlit)
+    participant UI as Streamlit page
+    participant API as FastAPI route
+    participant Svc as app.api.services
+    participant Eng as WorkflowEngine (M6)
+    participant Audit as AuditStore
+
+    User->>UI: Select "Production Readiness Review", fill form
+    UI->>API: POST /workflows/production_readiness_review/execute
+    API->>Svc: execute_workflow(engine, workflow_id, inputs)
+    Svc->>Eng: engine.run(workflow_id, inputs)
+    Eng-->>Svc: WorkflowExecution(status="awaiting_approval")
+    Svc->>Audit: record "workflow_executed"
+    Svc-->>API: execution
+    API-->>UI: 200 ExecutionDetailOut
+    UI-->>User: Shows findings, evidence gaps, "awaiting approval"
+
+    actor Reviewer as Reviewer (Streamlit)
+    Reviewer->>UI: Approvals page -- decide "approve" + comment
+    UI->>API: POST /approvals/{id}/decide
+    API->>Svc: record_approval(engine, id, "approve", ...)
+    Svc->>Eng: engine.approve(id, ApprovalDecision(...))
+    Eng-->>Svc: WorkflowExecution(status="completed")
+    Svc->>Audit: record "workflow_approval_decided"
+    Svc-->>API: execution
+    API-->>UI: 200 ExecutionDetailOut (report, citations)
+    UI-->>Reviewer: Final report + Markdown/JSON download buttons
+```
+
+### Application service layer
+
+`app/api/services/` — one thin module per capability group
+(`query_service.py`, `advisor_service.py`, `knowledge_service.py`,
+`workflow_service.py`, `approval_service.py`, `evaluation_service.py`,
+`platform_service.py`). Each function validates its inputs, calls
+**exactly one** unchanged Milestone 1–6 entry point, optionally records
+an audit event, and returns plain data — routes never contain
+retrieval, prompt, model-provider, vector-store, or workflow-stage
+logic directly. One concrete example of reuse-not-rebuild: the
+multi-advisor query endpoint's `conflicts` field reuses Milestone 6's
+`detect_conflicts()` directly by constructing `WorkflowStageResult`
+-shaped wrapper objects from `RagAnswer`s — no new conflict-detection
+logic was written for the API.
+
+### Access control
+
+Four hierarchical roles, each inheriting the permissions of every role
+below it:
+
+| Role | Can do |
+|---|---|
+| `viewer` | Ask grounded questions, browse advisors/workflows/knowledge, semantic search, view executions/reports/evaluation history, view detailed health |
+| `engineer` | + Run advisor queries directly, execute/resume/cancel workflows, trigger evaluation runs |
+| `reviewer` | + Record approval decisions (approve/reject/request_changes/cancel) |
+| `administrator` | + Run knowledge-base ingestion/indexing/rebuild, view the audit log |
+
+Authentication is a local, config-based API-key directory
+(`data/auth/users.json`, git-ignored; `data/auth/users.example.json`
+committed as a template) — **not** full SSO/OAuth/SAML/LDAP, by
+explicit design. `get_current_user` raises 401 for a missing/unknown
+key; `require_role(minimum)` raises 403 only after a user was
+successfully resolved — the 401-vs-403 split falls out of FastAPI
+dependency composition order, not conditional logic.
+
+### Error model
+
+Every error response shares one envelope:
+
+```json
+{"error": {"code": "WORKFLOW_AWAITING_APPROVAL", "message": "...", "details": {}, "request_id": "..."}}
+```
+
+A fixed `{DomainExceptionClass: (status_code, ErrorCode)}` table
+(`app/api/errors.py`) is registered once, at startup, as FastAPI
+exception handlers — route handlers never `try`/`except`; every
+exception a Milestone 1–6 module already raises (`UnknownAdvisorError`,
+`WorkflowStoreError`, `ModelProviderError`, ...) bubbles straight
+through it. Two exception classes needed a genuinely new API-level
+distinction, not implied by the raw domain exception: `WorkflowEngine`
+raises the same `WorkflowEngineError` whether an execution is paused
+for approval or already terminal, but the API returns the specific
+`WORKFLOW_AWAITING_APPROVAL`/`WORKFLOW_ALREADY_COMPLETED` codes — done
+by checking `WorkflowExecution.status` *proactively* in
+`app.api.services.workflow_service`/`approval_service` before calling
+the engine, never by parsing the exception's message string.
+
+### API surface
+
+```bash
+python -m app.api                    # runs uvicorn on 127.0.0.1:8000
+# interactive docs: http://127.0.0.1:8000/docs (Swagger) and /redoc
+```
+
+| Tag | Endpoints |
+|---|---|
+| Health | `GET /health` |
+| Auth | `GET /auth/me` |
+| Queries | `POST /query?format=json\|markdown` |
+| Advisors | `GET /advisors`, `GET /advisors/{id}`, `POST /advisors/{id}/query`, `POST /advisors/route` |
+| Knowledge | `GET /knowledge/documents`, `GET /knowledge/documents/{id}`, `GET /knowledge/stats`, `POST /knowledge/search`, `POST /knowledge/ingest`, `POST /knowledge/index`, `POST /knowledge/rebuild` |
+| Workflows | `GET /workflows`, `GET /workflows/{id}`, `GET /workflows/{id}/examples`, `POST /workflows/{id}/execute`, `GET /workflows/executions`, `GET /workflows/executions/{id}`, `POST /workflows/executions/{id}/resume`, `POST /workflows/executions/{id}/cancel`, `GET /workflows/executions/{id}/report?format=json\|markdown` |
+| Approvals | `GET /approvals`, `POST /approvals/{id}/decide` |
+| Evaluation | `POST /evaluation/runs`, `GET /evaluation/runs`, `GET /evaluation/runs/{id}` |
+| Platform | `GET /platform/health`, `GET /platform/audit` |
+
+All list endpoints share one pagination envelope
+(`{items, page, page_size, total_items, total_pages}`,
+`app/api/schemas/common.py`).
+
+### Report export
+
+`app/export/` — `common.py` builds one shared envelope (title,
+timestamp, question/answer or report sections, findings, evidence
+gaps, conflicts, citations, warnings, a fictional-company disclaimer;
+never API keys, prompts, or stack traces) from data the API already
+computed; `markdown_renderer.py`/`json_renderer.py` format that same
+envelope two ways. `?format=markdown` on `POST /query` and
+`GET /workflows/executions/{id}/report` returns a `text/markdown`
+body instead of JSON — same computed answer/report, different
+representation, never re-derived. The Streamlit pages' download
+buttons use this: JSON is the already-fetched response re-serialized
+client-side (no extra request); Markdown is fetched from the API's own
+`?format=markdown` endpoint, so the frontend never re-implements
+rendering.
+
+### Streamlit frontend
+
+`app/frontend/` — 9 pages, `app/frontend/api_client.py` is the *only*
+module that knows the backend URL/API key:
+
+| Page | Purpose |
+|---|---|
+| Home (`main.py`) | API key entry, current-user display, health check, quick-start questions |
+| Enterprise Assistant | Manual/automatic advisor selection, citations, routing, conflicts, export |
+| Knowledge Explorer | Browse/filter documents, semantic search, admin actions (ingest/index/rebuild) |
+| Advisors | Card grid of all 10 advisors, direct-query form (engineer+) |
+| Workflows | Run any of the 5 workflows via a **generic, `input_schema`-driven form** (one component for all 5, not 5 hand-built forms) / a loaded example / an uploaded JSON file; browse executions, findings, report, export |
+| Approvals | The reviewer's pending-approval queue; comment required to reject/request changes |
+| Evaluation | Trigger a run, browse run history and per-check pass rates |
+| Platform Operations | Detailed health/component diagnostics, audit log (administrator) |
+| About | Static: capabilities, explicit exclusions, milestone history |
+
+```bash
+python -m app.api                                    # terminal 1
+streamlit run app/frontend/main.py                    # terminal 2
+```
+
+### Safety limits
+
+- **CORS** — restricted to `API_CORS_ORIGINS` (default: the Streamlit
+  origin only), wired via `CORSMiddleware`.
+- **Rate limiting** — a simple in-memory sliding-window limiter
+  (`API_RATE_LIMIT_PER_MINUTE`, default 120/min), keyed by API key
+  (falling back to client IP). Per-process, not distributed — an
+  explicit, documented scope limit, not a production rate-limiting
+  service.
+- **Request size limit** — rejects oversized bodies via `Content-Length`
+  before any route runs (`API_MAX_UPLOAD_BYTES`, default 200KB).
+- **Question/pagination bounds** — `MAX_QUESTION_LENGTH`,
+  `DEFAULT_PAGE_SIZE`/`MAX_PAGE_SIZE` on every paginated list endpoint.
+- **Confirmed destructive actions** — `POST /knowledge/rebuild` requires
+  the request body to contain the exact string `"REBUILD"`.
+
+### Audit trail
+
+Every significant action (a question asked, an advisor queried, a
+workflow executed/resumed/cancelled, an approval decided, ingestion/
+indexing/rebuild run, an evaluation triggered) is appended to
+`audit_log/events.jsonl` (git-ignored) via `app.audit.store.AuditStore`
+— actor, role, action, resource, outcome, and a small metadata dict
+(**never** full prompts/answers/secrets). Viewable at
+`GET /platform/audit` (administrator-only) or the Platform Operations
+page.
+
+### Configuration additions
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `API_HOST` / `API_PORT` | `127.0.0.1` / `8000` | Where the FastAPI app listens |
+| `API_CORS_ORIGINS` | `http://localhost:8501,http://127.0.0.1:8501` | Comma-separated allowed origins |
+| `API_MAX_QUESTION_LENGTH` | `2000` | Guardrail on `POST /query`'s question field |
+| `API_MAX_UPLOAD_BYTES` | `200000` | Request-body size cap |
+| `API_REQUEST_TIMEOUT_SECONDS` | `60` | Client-side timeout used by the Streamlit `ApiClient` |
+| `API_RATE_LIMIT_PER_MINUTE` | `120` | In-memory rate limit, per API key/IP |
+| `AUDIT_LOG_DIR` | `audit_log` | Where the append-only audit log is written |
+| `AUTH_USERS_FILE` | `data/auth/users.json` | Local API-key/role directory |
+| `EVALUATION_RUNS_DIR` | `evaluation_runs` | Where persisted evaluation run history is written |
+
+### Tests
+
+211 new tests across the API foundation, auth/RBAC, every route group
+(query/advisors/knowledge/workflows/approvals/evaluation/platform),
+safety middleware, the export module, evaluation-run persistence, and
+the Streamlit `ApiClient`/session layer — `TestClient` +
+`app.dependency_overrides` throughout, `FakeModelProvider` +
+`LocalHashingEmbeddingProvider`, no network calls, no browser
+automation. **530 tests total** (319 from Milestones 1–6 + 211 new).
+
+### End-to-end validation (run live against the real API + KB)
+
+1. **Grounded Q&A** — manual advisor query and auto-routed multi-advisor
+   query, both with real citations against the 820-chunk indexed KB;
+   Markdown export returns a well-formed document.
+2. **Routing preview + semantic search** — `POST /advisors/route` and
+   `POST /knowledge/search` against the real index.
+3. **Knowledge base administration** — filtered document listing,
+   viewer forbidden from admin actions (403), administrator runs
+   incremental indexing successfully.
+4. **Full workflow lifecycle** — Production Readiness Review with clean
+   evidence completes immediately (no blocking gap); the same workflow
+   with a missing rollback plan correctly pauses, and a reviewer
+   rejection with a required comment cancels it.
+5. **RBAC boundaries** — no key (401), unknown key (401), and every
+   role tier correctly blocked (403) from the tier above it, across
+   knowledge/approvals/advisors endpoints.
+6. **Evaluation + platform diagnostics** — a triggered evaluation run
+   is persisted and listed; `/platform/health` reports a real,
+   cheap retrieval call succeeding; the audit trail correlates every
+   action above by actor and role.
+
+One real gap was found and fixed during this pass: evaluation runs
+were not being audit-logged (every other mutating action was) —
+`run_and_save_evaluation` now records `evaluation_run_triggered`.
+
+### Limitations
+
+- The rate limiter and audit log are per-process, in-memory/local-file
+  — not shared across multiple worker processes or a horizontally
+  scaled deployment. An explicit, documented scope limit for this
+  milestone, not an oversight.
+- No file-upload endpoint exists yet (`API_MAX_UPLOAD_BYTES` guards the
+  general request-size limit already; Streamlit's JSON-file upload for
+  workflow inputs is parsed client-side and sent as a normal JSON body).
+- Same underlying `local`-embedding-provider limitation carried from
+  every prior milestone: retrieval/routing/evaluation quality is only
+  as good as the lexical hashing embedding; expected to improve with
+  `EMBEDDING_PROVIDER=openai`.
+- Deployment here is local-only (`python -m app.api` + `streamlit run`)
+  — no containerization, cloud deployment, or process supervisor is
+  included, consistent with the milestone's explicit "docs-only" scope
+  for production deployment.
+
+### Security considerations
+
+- Every safety consideration carried from Milestones 3 and 6 (untrusted
+  document text never treated as instructions, no shell execution or
+  production actions, secrets never logged) still applies — the API
+  adds authentication, authorization, CORS, rate limiting, and request
+  size limits on top, without weakening any of them.
+- API keys are excluded from every serialized `User` response
+  (`Field(exclude=True)` on `User.api_key`) and never appear in audit
+  metadata.
+- `data/auth/users.json` and `audit_log/` are git-ignored; only the
+  example user directory (`data/auth/users.example.json`, fake keys) is
+  committed.
+
+### Portfolio notes
+
+This milestone demonstrates: designing a typed, versioned, RBAC-gated
+API over an existing domain layer without touching that layer's
+internals; a consistent error-envelope and pagination-envelope design
+reused across every endpoint; a genuinely generic UI component (the
+workflow form) instead of five near-duplicates; proactive precondition
+checks that produce specific error codes instead of parsing exception
+strings; and a live end-to-end validation pass that found and fixed a
+real defect (the missing evaluation audit event) rather than relying
+on unit tests alone. The whole platform runs fully offline by default
+(`LLM_PROVIDER=fake`, `EMBEDDING_PROVIDER=local`) — every screenshot,
+sample, and test in this repository is reproducible with zero API
+keys and zero network access.
 
 ## Project layout
 
@@ -1088,16 +1401,42 @@ app/
   models/       + workflow.py (ReviewFinding, EvidenceGap,
                 ApprovalDecision, WorkflowStageResult,
                 WorkflowExecution)                                  — Milestone 6 (pydantic)
-  api/, telemetry/, ...                                            — placeholders for later milestones
+  auth/         roles.py (Role, role_at_least), users.py (User, load_users),
+                dependencies.py (get_current_user, require_role)     — Milestone 7
+  audit/        models.py (AuditEvent), store.py (AuditStore),
+                logger.py (AuditContext, record_from_context)        — Milestone 7
+  export/       common.py (envelope builders), markdown_renderer.py,
+                json_renderer.py                                     — Milestone 7
+  evaluation/   + run_models.py (EvaluationRun), run_store.py
+                (EvaluationRunStore)                                 — Milestone 7
+  api/          main.py (app factory + lifespan), version.py,
+                errors.py, dependencies/services.py,
+                middleware/ (request_context, rate_limit,
+                request_size_limit), routes/ (health, auth, query,
+                advisors, knowledge, workflows, approvals,
+                evaluation, platform), schemas/ (one file per route
+                group + common.py), services/ (one file per
+                capability group)                                     — Milestone 7
+  frontend/     main.py (Home), api_client.py, session.py,
+                pages/ (1-8: Enterprise Assistant, Knowledge
+                Explorer, Advisors, Workflows, Approvals,
+                Evaluation, Platform Operations, About),
+                components/forms.py (generic input_schema-driven
+                workflow form)                                        — Milestone 7
+  telemetry/, ...                                                    — placeholder for a later milestone
 enterprise_knowledge_base/   Northstar's Markdown knowledge base (source data)
 data/processed/               generated ingestion artifacts (git-ignored)
 data/evaluation_sets/         Milestone 3 + Milestone 6 seed evaluation datasets
+data/auth/                     Milestone 7 user directory (users.example.json committed,
+                                users.json git-ignored)
 examples/workflows/           Milestone 6 example/fixture workflow input files
 vector_store/                  generated embeddings + index (git-ignored)
 workflow_store/                 generated workflow execution state (git-ignored)
+evaluation_runs/                Milestone 7 persisted evaluation run history (git-ignored)
+audit_log/                      Milestone 7 append-only audit log (git-ignored)
 tests/                         pytest suite
 ```
 
-Everything not listed above as M1/M2/M3/M4/M5/M6 is intentionally still
+Everything not listed above as M1/M2/M3/M4/M5/M6/M7 is intentionally still
 an empty placeholder — scaffolding for milestones that haven't been
 built yet.

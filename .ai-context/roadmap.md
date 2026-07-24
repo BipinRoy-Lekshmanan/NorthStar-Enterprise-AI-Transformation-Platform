@@ -139,15 +139,45 @@ synthesis; Production Readiness Review/AI Solution Review pause only on
 a blocking finding; a cancelled execution can never be resumed. 317
 tests total (214 unchanged + 103 new).
 
-## Milestone 7+ — not started
+## Milestone 7 — Enterprise AI Platform (API + Web UI) ✅ Complete
 
-A thin API/UI layer, and evaluating advisor/workflow answer *quality*
-specifically (beyond the deterministic structural checks Milestones 3
-and 6 already do), are still empty scaffolding under `app/` (`api/`,
-`telemetry/`, and everything in `rag/`/`services/`/`evaluation/` not
-listed above). Build on top of Milestone 6's
-`WorkflowEngine`/`WorkflowDefinition` rather than re-implementing stage
-execution or persistence; conflict detection currently requires literal
-marker phrases in advisor answer text and cannot fire under the default
-offline `FakeModelProvider` (see Milestone 6's README Limitations) --
-this is the main gap a real-provider evaluation pass would close.
+A FastAPI backend and a Streamlit frontend over everything built in
+Milestones 1–6 — productization, not new intelligence. No new
+retrieval, prompting, routing, or workflow logic; every route and page
+is a thin wrapper. Adds local hierarchical RBAC (viewer < engineer <
+reviewer < administrator), an append-only audit trail, persisted
+evaluation run history (new capability — neither evaluator persisted
+anything before this), Markdown/JSON report export, and a simple
+in-memory rate limiter + CORS restriction + request-size cap.
+
+Delivered in new `app/auth/`, `app/audit/`, `app/export/`, `app/api/`,
+and `app/frontend/` packages, plus `app/evaluation/run_models.py`/
+`run_store.py` and 2 new settings classes (`ApiSettings`,
+`AuthSettings`, `EvaluationSettings`) in `app/config/settings.py`. See
+root `README.md` for the full architecture diagrams, API surface,
+RBAC table, and end-to-end validation results. Verified against the
+real knowledge base and via 6 end-to-end scenarios run live against the
+running API (grounded Q&A, routing/search, KB administration, the full
+workflow approval lifecycle, RBAC boundaries, evaluation + audit
+correlation) — one real gap found and fixed during that pass
+(evaluation runs weren't being audit-logged). 530 tests total (319
+unchanged + 211 new).
+
+**Known limitation carried over from every prior milestone**: retrieval/
+routing/evaluation quality is only as good as the default `local`
+lexical hashing embedding provider; expected to improve with
+`EMBEDDING_PROVIDER=openai`. The rate limiter and audit log are
+per-process/local-file, not shared across multiple workers or a scaled
+deployment — an explicit scope limit for this milestone. Conflict
+detection still requires literal marker phrases in advisor answer text
+and cannot fire under the default offline `FakeModelProvider` (carried
+from Milestone 6, unchanged by this milestone).
+
+## Milestone 8+ — not started
+
+Nothing beyond Milestone 7 has been scoped yet. Natural next
+candidates (not committed): LLM-as-judge evaluation of advisor/workflow
+answer *quality* (beyond the deterministic structural checks Milestones
+3, 6, and 7's evaluation persistence already do); containerized/cloud
+deployment (explicitly docs-only in Milestone 7's scope); a shared
+rate-limit/audit backend for a horizontally-scaled deployment.
