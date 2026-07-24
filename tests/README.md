@@ -1,7 +1,8 @@
 # tests/
 
-Pytest suite for the ingestion pipeline (Milestone 1) and the semantic
-indexing/retrieval layer (Milestone 2).
+Pytest suite for the ingestion pipeline (Milestone 1), the semantic
+indexing/retrieval layer (Milestone 2), and the grounded RAG assistant
+(Milestone 3).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -20,9 +21,19 @@ python -m pytest
 | `test_vector_store.py` | Upsert/search/delete, persistence round-trip, dimension/provider mismatch errors |
 | `test_indexer.py` | Incremental sync (add/remove/unchanged), edited-chunk re-id handling, end-to-end with `IngestionPipeline` |
 | `test_retriever.py` | Ranking, diagnostics, `top_k`, metadata filters, empty-index behavior |
+| `test_llm_service.py` | `LanguageModelProvider` error hierarchy, `FakeModelProvider` determinism and citation-marker echoing |
+| `test_openai_llm_provider.py` | `OpenAIModelProvider` success/timeout/rate-limit/auth/not-found/unexpected-error paths, missing-package handling, secrets-not-logged — via a fake `openai` module injected into `sys.modules` |
+| `test_prompt_config.py` | Prompt version, guardrail phrases present, source-id formatting, injected text never in the system prompt |
+| `test_context_builder.py` | Ranking preservation, source-id assignment, dedup, size/chunk limits, sufficiency classification |
+| `test_citation_engine.py` | Valid/duplicate/invalid citation parsing, citations built only for ids actually cited |
+| `test_rag_pipeline.py` | Full workflow: sufficient/insufficient context, provider failure, empty/long question, no retrieval results, diagnostics, filters |
+| `test_guardrails.py` | Prompt-injection fixture (injected text stays in the user prompt, pipeline doesn't special-case it), secrets and full context text never logged at INFO, model output size bounded |
 
-All Milestone 2 tests use `LocalHashingEmbeddingProvider` — no network
-calls, no API key required, same offline-test philosophy as Milestone 1.
+All Milestone 2 and 3 tests use `LocalHashingEmbeddingProvider` and
+`FakeModelProvider` — no network calls, no API key required, same
+offline-test philosophy as Milestone 1. `test_openai_llm_provider.py` is
+the one exception that touches provider-specific code, and it does so
+via a fake module, not the real SDK.
 
 `pytest.ini` sets `pythonpath = .` so `import app...` resolves without an
 installed package.

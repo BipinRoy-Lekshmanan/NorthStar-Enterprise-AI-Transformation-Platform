@@ -58,3 +58,55 @@
   UTF-8 with `errors="replace"` -- discovered because
   `16_Incident_Management.md` contains "✓" characters that crashed
   `print()` under the default Windows cp1252 console codepage.
+
+## Milestone 3 — Grounded Enterprise RAG Assistant (CLI)
+
+- **OpenAI (Chat Completions) chosen as the real LLM provider**, not
+  Anthropic, per explicit user preference: it reuses the `openai`
+  package already optional for Milestone 2's embedding provider, so one
+  API key can unlock both embeddings and generation. Mirrors
+  `openai_provider.py`'s lazy-import + error-translation pattern exactly
+  (`app/services/openai_llm_provider.py`).
+- **Default `LLM_PROVIDER=fake`, not `openai`** — same reasoning as
+  `EMBEDDING_PROVIDER=local` in Milestone 2: the full CLI, evaluator, and
+  test suite work offline with zero API keys; real grounded answers are
+  one env var + one key away. `FakeModelProvider`'s answers are clearly
+  labeled placeholder text, never mistaken for a real answer.
+- **Insufficient-context is decided before any LLM call**, from raw
+  retrieval results (no results / low top score / nothing usable after
+  filtering) — `ContextBuilder.build()` computes this and `RagService`
+  never builds a prompt or calls the model when it's False. This is the
+  milestone's core guardrail: weak context can never be silently papered
+  over by a fluent-sounding invented answer.
+- **Known limitation, confirmed via `python -m app.evaluation.rag_evaluator`**:
+  the default local hashing embedding provider's insufficient-context
+  detection is unreliable. It's lexical/hash-based, not semantic — even
+  a completely unrelated question (e.g. "Who is the CEO of Northstar in
+  real life?") scores 0.30+ against `INSUFFICIENT_CONTEXT_MIN_SCORE=0.15`
+  purely from shared vocabulary ("Northstar") and hash-collision noise in
+  short query vectors (512 dims, few tokens). Both insufficient-context
+  seed cases fail under `EMBEDDING_PROVIDER=local`; all 12 content
+  questions' expected-document retrieval passed. Deliberately not
+  "fixed" by tuning thresholds against a weak baseline — the milestone
+  spec explicitly asked to keep the threshold logic simple, and the
+  correct fix is a real embedding provider (`EMBEDDING_PROVIDER=openai`),
+  not threshold-chasing. Documented in the README Limitations section.
+- **Citations are reconstructed only from ids the model actually cited**,
+  never all supplied sources — `citation_engine.py` intersects parsed
+  `[S#]` markers against the ids present in the prompt, dropping unknown
+  ids with a warning rather than accepting them.
+- **Character-based context budget, not token-based** — consistent with
+  Milestone 1's chunking (also character-based); documented as a known
+  approximation since providers tokenize differently.
+- **Provider failures and invalid questions raise rather than becoming
+  disguised content** — `QuestionValidationError`/`ModelProviderError`
+  propagate out of `RagService.ask()`; a `RagAnswer` always represents a
+  real attempt with real grounding, never a masked error.
+- **`OpenAIModelProvider` is tested via a fake `openai` module injected
+  into `sys.modules`** (not by installing/calling the real SDK) — the
+  `_translate_error` logic matches on exception *class name* rather than
+  `isinstance`, specifically so fake exception classes with matching
+  names exercise the same code path without needing the real package.
+- **Fixed a pre-existing bug**: `app/services/_init_.py` (typo) →
+  `__init__.py`, same pattern as Milestones 1–2, now that
+  `app/services/llm_service.py` is used.

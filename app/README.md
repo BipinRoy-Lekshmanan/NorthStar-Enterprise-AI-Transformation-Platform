@@ -29,17 +29,34 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | `embeddings/indexer.py` | `Indexer` — incremental sync (content-addressed `chunk_id` set-diff), CLI: `python -m app.embeddings.indexer` |
 | `rag/retriever.py` | `Retriever` — embed → search → rank + diagnostics, CLI: `python -m app.rag.retriever "<question>"` |
 
+## Implemented (Milestone 3)
+
+| Module | Purpose |
+|---|---|
+| `config/settings.py` | `RagSettings.from_env()` — same file, same pattern as Ingestion/RetrievalSettings |
+| `config/prompt_config.py` | `PROMPT_VERSION`, grounded-RAG `SYSTEM_PROMPT`, `build_prompt()` |
+| `models/citation.py` | `Citation` (pydantic) |
+| `models/response.py` | + `RagAnswer`, `RagDiagnostics` (alongside Milestone 2's models) |
+| `services/llm_service.py` | `LanguageModelProvider` protocol, structured errors, `FakeModelProvider` (default, offline) |
+| `services/openai_llm_provider.py` | `OpenAIModelProvider` — lazy-imports `openai`, only needed when selected |
+| `rag/context_builder.py` | `ContextBuilder` — rank-preserving, dedup, size-bounded, decides sufficiency |
+| `rag/citation_engine.py` | `parse_citation_ids()` / `build_citations()` — only ids actually cited |
+| `rag/pipeline.py` | `RagService` — orchestrates the full grounded workflow, CLI: `python -m app.rag.ask "<question>"` (via `app/rag/ask.py`) |
+| `evaluation/rag_evaluator.py` | Seed-dataset evaluation runner, CLI: `python -m app.evaluation.rag_evaluator` |
+
 See the [root README](../README.md) for how to run the pipeline, indexer,
-retriever, and tests.
+retriever, RAG assistant, evaluator, and tests.
 
 ## Placeholders (future milestones)
 
-Every other module here (`agents/`, `services/`, `api/`, `auth/`,
-`cache/`, `telemetry/`, `evaluation/`, `frontend/`, `prompts/`,
-`ingestion/pdf_loader.py`, `embeddings/emdedding_service.py`,
-`embeddings/reranker.py`, `models/citation.py`,
-`rag/generator.py`, `rag/citation_engine.py`, `rag/context_builder.py`,
-`rag/hybrid_search.py`, `rag/pipeline.py`) is empty scaffolding, not yet
-implemented. In particular, everything in `rag/` besides `retriever.py`
-is reserved for a future milestone that adds LLM answer generation on
-top of Milestone 2's retrieval — do not assume any behavior from them.
+Every other module here (`agents/`, `api/`, `auth/`, `cache/`,
+`telemetry/`, `frontend/`, `prompts/`, `ingestion/pdf_loader.py`,
+`embeddings/emdedding_service.py`, `embeddings/reranker.py`,
+`rag/generator.py`, `rag/hybrid_search.py`,
+`services/document_service.py`, `services/embedding_service.py`,
+`services/logging_service.py`, `services/vector_service.py`,
+`evaluation/benchmark_runner.py`, `evaluation/llm_judge.py`,
+`evaluation/retrieval_metrics.py`, `evaluation/sample_questions.py`) is
+empty scaffolding, reserved for specialized advisors and a richer
+evaluation/observability layer built on top of `RagService`/`RagAnswer`
+— do not assume any behavior from them.
