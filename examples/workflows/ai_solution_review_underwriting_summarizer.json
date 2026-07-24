@@ -1,0 +1,14 @@
+{
+  "use_case": "Loan document summarization for underwriters",
+  "business_objective": "Reduce underwriter review time",
+  "model_provider": "OpenAI",
+  "rag_usage": "Yes, grounded on internal loan documents",
+  "agent_usage": "No",
+  "data_sources": ["loan_documents"],
+  "data_sensitivity": "Confidential",
+  "human_review_process": "Underwriter reviews every summary before use",
+  "evaluation_approach": "Golden-set accuracy evaluation before release",
+  "deployment_model": "Internal service",
+  "expected_users": "Underwriting team",
+  "known_risks": []
+}

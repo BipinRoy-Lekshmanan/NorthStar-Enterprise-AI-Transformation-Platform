@@ -1,0 +1,13 @@
+{
+  "use_case": "Automated loan approval recommendations",
+  "business_objective": "Speed up loan decisioning",
+  "model_provider": "OpenAI",
+  "rag_usage": "Yes, grounded on loan policy documents",
+  "agent_usage": "No",
+  "data_sources": ["loan_applications", "credit_history"],
+  "data_sensitivity": "Restricted",
+  "evaluation_approach": "Backtesting against historical decisions",
+  "deployment_model": "Internal service",
+  "expected_users": "Loan officers",
+  "known_risks": ["Potential bias in historical training data"]
+}

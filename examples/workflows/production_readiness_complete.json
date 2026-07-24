@@ -1,0 +1,14 @@
+{
+  "release_name": "Loan Notification Service v2",
+  "services_affected": ["notification-service", "loan-service"],
+  "business_impact": "Improves customer notification latency for loan status changes.",
+  "deployment_strategy": "canary",
+  "test_evidence": "Full regression suite passed, 92% coverage.",
+  "security_evidence": "Security review completed, no open findings.",
+  "performance_evidence": "Load tested to 2x expected peak volume.",
+  "rollback_plan": "Automated rollback via canary controller on error rate > 1%.",
+  "monitoring_plan": "Dashboards and alerts configured in existing observability stack.",
+  "support_readiness": "On-call rotation briefed, runbook updated.",
+  "known_defects": [],
+  "change_window": "Saturday 2am-4am UTC"
+}

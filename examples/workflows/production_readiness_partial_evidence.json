@@ -1,0 +1,10 @@
+{
+  "release_name": "Loan Notification Service v2",
+  "services_affected": ["notification-service"],
+  "business_impact": "Improves customer notification latency.",
+  "deployment_strategy": "canary",
+  "test_evidence": "Full regression suite passed.",
+  "security_evidence": "Security review completed.",
+  "rollback_plan": "Automated rollback via canary controller.",
+  "known_defects": []
+}

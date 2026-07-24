@@ -1,0 +1,12 @@
+{
+  "business_priorities": ["Reduce loan processing time", "Improve fraud detection"],
+  "current_ai_capabilities": "Pilot RAG assistant for engineering knowledge base",
+  "current_engineering_metrics": "Deployment frequency: weekly",
+  "adoption_challenges": ["Limited AI literacy across teams"],
+  "technology_constraints": ["Must remain within existing cloud provider"],
+  "governance_maturity": "developing",
+  "budget_constraints": "Moderate, phased investment preferred",
+  "target_timeline": "18 months",
+  "regulatory_considerations": ["Fair lending compliance"],
+  "desired_business_outcomes": ["Faster loan decisions", "Lower operating cost"]
+}

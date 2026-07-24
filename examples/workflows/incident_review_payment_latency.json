@@ -1,0 +1,16 @@
+{
+  "incident_title": "Payment API latency spike",
+  "severity": "Sev-2",
+  "start_time": "2026-07-20T10:00:00Z",
+  "end_time": "2026-07-20T11:30:00Z",
+  "customer_impact": "Delayed payment confirmations for 15 minutes",
+  "systems_affected": ["payment-api"],
+  "timeline": ["10:00 detected", "10:15 mitigated", "11:30 resolved"],
+  "detection_method": "Automated alerting",
+  "containment_actions": "Scaled up payment-api pods",
+  "recovery_actions": "Rolled back recent config change",
+  "suspected_root_cause": "Misconfigured connection pool size",
+  "release_related": "yes",
+  "security_related": "no",
+  "evidence": ["grafana dashboard link"]
+}

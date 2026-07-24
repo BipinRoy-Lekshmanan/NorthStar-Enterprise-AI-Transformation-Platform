@@ -1,0 +1,11 @@
+{
+  "incident_title": "Loan service intermittent 500 errors",
+  "severity": "Sev-1",
+  "start_time": "2026-07-21T08:00:00Z",
+  "customer_impact": "Loan applications intermittently failed to submit for 45 minutes",
+  "systems_affected": ["loan-service", "loan-service-db"],
+  "detection_method": "Customer-reported",
+  "suspected_root_cause": "Database connection pool exhaustion",
+  "release_related": "unknown",
+  "security_related": "no"
+}
