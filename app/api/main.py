@@ -17,10 +17,17 @@ from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware.request_context import RequestContextMiddleware
-from app.api.routes import advisors, auth, health, query
+from app.api.routes import advisors, auth, health, knowledge, query
 from app.audit.store import AuditStore
 from app.auth.users import load_users
-from app.config.settings import ApiSettings, AuthSettings, RagSettings, RetrievalSettings, RouterSettings
+from app.config.settings import (
+    ApiSettings,
+    AuthSettings,
+    IngestionSettings,
+    RagSettings,
+    RetrievalSettings,
+    RouterSettings,
+)
 from app.rag.pipeline import build_default_rag_service
 
 APP_VERSION = "0.7.0"
@@ -43,10 +50,12 @@ async def lifespan(app: FastAPI):
     rag_settings = RagSettings.from_env()
     retrieval_settings = RetrievalSettings.from_env()
     router_settings = RouterSettings.from_env()
+    ingestion_settings = IngestionSettings.from_env()
 
     app.state.rag_settings = rag_settings
     app.state.retrieval_settings = retrieval_settings
     app.state.router_settings = router_settings
+    app.state.ingestion_settings = ingestion_settings
     app.state.rag_service = build_default_rag_service(rag_settings, retrieval_settings)
 
     yield
@@ -71,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(query.router, prefix=API_PREFIX)
     app.include_router(advisors.router, prefix=API_PREFIX)
+    app.include_router(knowledge.router, prefix=API_PREFIX)
 
     return app
 

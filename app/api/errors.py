@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.agents.registry import UnknownAdvisorError
+from app.api.services.knowledge_service import UnknownDocumentError
 from app.config.settings import ConfigurationError
 from app.embeddings.vector_store import VectorStoreError
 from app.embeddings.vectorizer import EmbeddingProviderError
@@ -76,6 +77,7 @@ _DOMAIN_EXCEPTION_MAP: dict[type[Exception], tuple[int, ErrorCode]] = {
     QuestionValidationError: (400, ErrorCode.VALIDATION_ERROR),
     UnknownAdvisorError: (404, ErrorCode.NOT_FOUND),
     UnknownWorkflowError: (404, ErrorCode.NOT_FOUND),
+    UnknownDocumentError: (404, ErrorCode.NOT_FOUND),
     WorkflowStoreError: (404, ErrorCode.NOT_FOUND),
     WorkflowDefinitionError: (500, ErrorCode.INTERNAL_ERROR),
     WorkflowEngineError: (409, ErrorCode.WORKFLOW_ERROR),

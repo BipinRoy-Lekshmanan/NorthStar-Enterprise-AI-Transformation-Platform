@@ -91,3 +91,27 @@ class ApiClient:
 
     def preview_routing(self, question: str) -> dict:
         return self._request("POST", "/api/v1/advisors/route", json={"question": question})
+
+    # -- knowledge -----------------------------------------------------------------
+
+    def list_documents(self, page: int = 1, page_size: int = 25, **filters: Any) -> dict:
+        params = {"page": page, "page_size": page_size, **{k: v for k, v in filters.items() if v}}
+        return self._request("GET", "/api/v1/knowledge/documents", params=params)
+
+    def get_document(self, document_id: str) -> dict:
+        return self._request("GET", f"/api/v1/knowledge/documents/{document_id}")
+
+    def knowledge_stats(self) -> dict:
+        return self._request("GET", "/api/v1/knowledge/stats")
+
+    def search_knowledge(self, **payload: Any) -> dict:
+        return self._request("POST", "/api/v1/knowledge/search", json=payload)
+
+    def run_ingestion(self) -> dict:
+        return self._request("POST", "/api/v1/knowledge/ingest")
+
+    def run_index(self) -> dict:
+        return self._request("POST", "/api/v1/knowledge/index")
+
+    def run_rebuild(self, confirmation: str) -> dict:
+        return self._request("POST", "/api/v1/knowledge/rebuild", json={"confirmation": confirmation})

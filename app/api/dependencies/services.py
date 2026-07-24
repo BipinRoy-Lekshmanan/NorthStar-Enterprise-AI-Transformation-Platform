@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.audit.store import AuditStore
-from app.config.settings import RagSettings, RetrievalSettings, RouterSettings
+from app.config.settings import IngestionSettings, RagSettings, RetrievalSettings, RouterSettings
 from app.rag.pipeline import RagService
 
 
@@ -24,6 +24,10 @@ def get_rag_service(request: Request) -> RagService:
 
 def get_audit_store(request: Request) -> AuditStore:
     return request.app.state.audit_store
+
+
+def get_ingestion_settings(request: Request) -> IngestionSettings:
+    return request.app.state.ingestion_settings
 
 
 def get_rag_settings(request: Request) -> RagSettings:

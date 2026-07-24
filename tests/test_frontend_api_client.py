@@ -156,3 +156,98 @@ def test_preview_routing_posts_question(monkeypatch):
     assert captured["url"] == "http://test/api/v1/advisors/route"
     assert captured["json"] == {"question": "What testing evidence is required?"}
     assert result == {"primary_advisor": "testing"}
+
+
+def test_list_documents_passes_pagination_and_filters(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return httpx.Response(200, json={"items": [], "page": 1, "page_size": 25, "total_items": 0, "total_pages": 0})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.list_documents(page=2, page_size=10, status="Draft", owner="")
+
+    assert captured["method"] == "GET"
+    assert captured["url"] == "http://test/api/v1/knowledge/documents"
+    assert captured["params"] == {"page": 2, "page_size": 10, "status": "Draft"}
+
+
+def test_get_document_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://test/api/v1/knowledge/documents/NLC-ENG-005"
+        return httpx.Response(200, json={"document_id": "NLC-ENG-005"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_document("NLC-ENG-005") == {"document_id": "NLC-ENG-005"}
+
+
+def test_knowledge_stats_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/knowledge/stats"
+        return httpx.Response(200, json={"document_count": 2})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.knowledge_stats() == {"document_count": 2}
+
+
+def test_search_knowledge_posts_to_the_right_endpoint(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"results": []})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.search_knowledge(question="hi", top_k=5)
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/knowledge/search"
+    assert captured["json"] == {"question": "hi", "top_k": 5}
+
+
+def test_run_ingestion_posts_to_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "POST"
+        assert url == "http://test/api/v1/knowledge/ingest"
+        return httpx.Response(200, json={"documents_loaded": 2})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.run_ingestion() == {"documents_loaded": 2}
+
+
+def test_run_index_posts_to_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "POST"
+        assert url == "http://test/api/v1/knowledge/index"
+        return httpx.Response(200, json={"added": 0})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.run_index() == {"added": 0}
+
+
+def test_run_rebuild_posts_confirmation_phrase(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"added": 2})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.run_rebuild("REBUILD")
+
+    assert captured["url"] == "http://test/api/v1/knowledge/rebuild"
+    assert captured["json"] == {"confirmation": "REBUILD"}
