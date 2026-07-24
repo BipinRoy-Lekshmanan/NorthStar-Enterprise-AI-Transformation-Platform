@@ -55,6 +55,17 @@ DEFAULT_ROUTER_KEYWORD_WEIGHT = 0.4
 DEFAULT_WORKFLOW_STORE_DIR = "workflow_store"
 DEFAULT_WORKFLOW_MAX_STAGES = 20
 
+DEFAULT_API_HOST = "127.0.0.1"
+DEFAULT_API_PORT = 8000
+DEFAULT_API_CORS_ORIGINS = "http://localhost:8501,http://127.0.0.1:8501"
+DEFAULT_API_MAX_QUESTION_LENGTH = 2000
+DEFAULT_API_MAX_UPLOAD_BYTES = 200_000
+DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 60.0
+
+DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
+
+DEFAULT_AUDIT_LOG_DIR = "audit_log"
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -443,6 +454,94 @@ class WorkflowSettings:
             raise ConfigurationError(
                 f"WORKFLOW_MAX_STAGES must be a positive integer, got {self.workflow_max_stages}."
             )
+
+
+@dataclass(frozen=True)
+class ApiSettings:
+    """Validated configuration for the FastAPI application (Milestone 7)."""
+
+    host: str
+    port: int
+    cors_allowed_origins: tuple[str, ...]
+    max_question_length: int
+    max_upload_bytes: int
+    request_timeout_seconds: float
+    audit_log_dir: Path
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "ApiSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        settings = cls(
+            host=env.get("API_HOST", DEFAULT_API_HOST).strip(),
+            port=_parse_int(env, "API_PORT", DEFAULT_API_PORT),
+            cors_allowed_origins=_split_csv(env.get("API_CORS_ORIGINS", DEFAULT_API_CORS_ORIGINS)),
+            max_question_length=_parse_int(
+                env, "API_MAX_QUESTION_LENGTH", DEFAULT_API_MAX_QUESTION_LENGTH
+            ),
+            max_upload_bytes=_parse_int(env, "API_MAX_UPLOAD_BYTES", DEFAULT_API_MAX_UPLOAD_BYTES),
+            request_timeout_seconds=_parse_float(
+                env, "API_REQUEST_TIMEOUT_SECONDS", DEFAULT_API_REQUEST_TIMEOUT_SECONDS
+            ),
+            audit_log_dir=_resolve(env.get("AUDIT_LOG_DIR", DEFAULT_AUDIT_LOG_DIR)),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support the API."""
+        if not self.host:
+            raise ConfigurationError("API_HOST must not be empty.")
+
+        if not (0 < self.port <= 65535):
+            raise ConfigurationError(f"API_PORT must be between 1 and 65535, got {self.port}.")
+
+        if not self.cors_allowed_origins:
+            raise ConfigurationError("API_CORS_ORIGINS must include at least one origin.")
+
+        if self.max_question_length <= 0:
+            raise ConfigurationError(
+                f"API_MAX_QUESTION_LENGTH must be a positive integer, got {self.max_question_length}."
+            )
+
+        if self.max_upload_bytes <= 0:
+            raise ConfigurationError(
+                f"API_MAX_UPLOAD_BYTES must be a positive integer, got {self.max_upload_bytes}."
+            )
+
+        if self.request_timeout_seconds <= 0:
+            raise ConfigurationError(
+                f"API_REQUEST_TIMEOUT_SECONDS must be positive, got {self.request_timeout_seconds}."
+            )
+
+
+@dataclass(frozen=True)
+class AuthSettings:
+    """Validated configuration for the local, config-based user directory (Milestone 7)."""
+
+    users_file: Path
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "AuthSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        settings = cls(users_file=_resolve(env.get("AUTH_USERS_FILE", DEFAULT_AUTH_USERS_FILE)))
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support authentication.
+
+        Deliberately does NOT check `users_file.exists()` here -- unlike
+        every other settings class, this file is genuinely optional at
+        import time (e.g. `python -m app.rag.ask` never touches auth at
+        all). The API's own startup lifespan is what requires the file to
+        actually exist, via `app.auth.users.load_users()`.
+        """
+        if not str(self.users_file).strip():
+            raise ConfigurationError("AUTH_USERS_FILE must not be empty.")
 
 
 def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:

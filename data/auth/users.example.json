@@ -1,0 +1,22 @@
+[
+  {
+    "api_key": "viewer-example-key-change-me",
+    "username": "viewer.example",
+    "role": "viewer"
+  },
+  {
+    "api_key": "engineer-example-key-change-me",
+    "username": "engineer.example",
+    "role": "engineer"
+  },
+  {
+    "api_key": "reviewer-example-key-change-me",
+    "username": "reviewer.example",
+    "role": "reviewer"
+  },
+  {
+    "api_key": "administrator-example-key-change-me",
+    "username": "administrator.example",
+    "role": "administrator"
+  }
+]

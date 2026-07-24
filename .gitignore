@@ -17,3 +17,12 @@ vector_store/index_state.json
 
 # generated workflow execution state
 workflow_store/*.json
+
+# generated evaluation run history
+evaluation_runs/*.json
+
+# append-only audit log
+audit_log/*.jsonl
+
+# local user directory (real credentials) -- data/auth/users.example.json stays committed
+data/auth/users.json
