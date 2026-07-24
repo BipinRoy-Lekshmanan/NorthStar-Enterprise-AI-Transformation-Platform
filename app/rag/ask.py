@@ -1,12 +1,16 @@
 """CLI entry point for the grounded RAG assistant.
 
     python -m app.rag.ask "How should a Sev-1 incident be handled?"
+    python -m app.rag.ask "..." --advisor testing
+    python -m app.rag.ask --list-advisors
 
 Pure formatting only -- no prompt text, business logic, or citation
 parsing lives here (see `app.rag.pipeline`, `app.config.prompt_config`,
-`app.rag.citation_engine`). `--show-context`/`--show-prompts` are wired
-via optional callback hooks on `RagService.ask()` so the debug-only
-content never has to pass through (or leak into) the `RagAnswer` model.
+`app.rag.citation_engine`, `app.agents.base_agent`). `--show-context`/
+`--show-prompts` are wired via optional callback hooks on
+`RagService.ask()` so the debug-only content never has to pass through
+(or leak into) the `RagAnswer` model. `--advisor` selection is manual --
+this CLI does not route or pick an advisor automatically.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import argparse
 import dataclasses
 import sys
 
+from app.agents.registry import UnknownAdvisorError, get_advisor, list_advisors
 from app.config.prompt_config import RagPrompt
 from app.config.settings import RagSettings
 from app.models.response import RagAnswer
@@ -87,11 +92,25 @@ def _format_prompt(prompt: RagPrompt) -> str:
     )
 
 
+def _format_advisor_list() -> str:
+    lines = ["Available advisors:\n"]
+    for advisor in list_advisors():
+        lines.append(f"{advisor.advisor_id}")
+        lines.append(f"  {advisor.display_name}")
+        lines.append(f"  {advisor.description}")
+        if advisor.default_filters:
+            lines.append(f"  Default filters: {advisor.default_filters}")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     from app.config.logging import configure_logging
 
     parser = argparse.ArgumentParser(description="Ask a grounded question over the Northstar knowledge base.")
-    parser.add_argument("question", help="Question to answer")
+    parser.add_argument("question", nargs="?", default=None, help="Question to answer")
+    parser.add_argument("--advisor", default=None, help="Advisor id to answer as (see --list-advisors)")
+    parser.add_argument("--list-advisors", action="store_true", help="List available advisors and exit")
     parser.add_argument("--top-k", type=int, default=None, help="Override number of chunks retrieved")
     parser.add_argument("--min-score", type=float, default=None, help="Override CONTEXT_MIN_SCORE")
     parser.add_argument("--model", default=None, help="Override LLM_MODEL")
@@ -106,6 +125,21 @@ def main() -> None:
     # Windows console codepage; never crash the CLI over stdout encoding.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    if args.list_advisors:
+        print(_format_advisor_list())
+        return
+
+    if not args.question:
+        parser.error("the following arguments are required: question (unless --list-advisors is given)")
+
+    advisor = None
+    if args.advisor:
+        try:
+            advisor = get_advisor(args.advisor)
+        except UnknownAdvisorError as exc:
+            print(f"Invalid advisor: {exc}")
+            raise SystemExit(1) from None
 
     configure_logging()
 
@@ -127,13 +161,23 @@ def main() -> None:
     on_prompt_built = (lambda prompt: print(_format_prompt(prompt))) if args.show_prompts else None
 
     try:
-        answer = service.ask(
-            args.question,
-            top_k=args.top_k,
-            filters=filters,
-            on_context_built=on_context_built,
-            on_prompt_built=on_prompt_built,
-        )
+        if advisor is not None:
+            answer = advisor.ask(
+                service,
+                args.question,
+                top_k=args.top_k,
+                filters=filters,
+                on_context_built=on_context_built,
+                on_prompt_built=on_prompt_built,
+            )
+        else:
+            answer = service.ask(
+                args.question,
+                top_k=args.top_k,
+                filters=filters,
+                on_context_built=on_context_built,
+                on_prompt_built=on_prompt_built,
+            )
     except QuestionValidationError as exc:
         print(f"Invalid question: {exc}")
         raise SystemExit(1) from None
@@ -141,6 +185,8 @@ def main() -> None:
         print(f"The language model is currently unavailable: {exc}")
         raise SystemExit(1) from None
 
+    if advisor is not None:
+        print(f"Advisor: {advisor.display_name}\n")
     print(_format_answer(answer))
     if args.show_diagnostics:
         print(_format_diagnostics(answer))
