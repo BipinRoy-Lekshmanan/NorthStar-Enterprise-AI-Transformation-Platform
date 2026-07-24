@@ -9,3 +9,8 @@ venv/
 # generated ingestion artifacts
 data/processed/*.jsonl
 data/processed/*.json
+
+# generated vector store artifacts
+vector_store/*.npy
+vector_store/*.jsonl
+vector_store/index_state.json
