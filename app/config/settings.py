@@ -45,6 +45,13 @@ DEFAULT_MAX_QUESTION_LENGTH = 2000
 DEFAULT_INSUFFICIENT_CONTEXT_MIN_RESULTS = 1
 DEFAULT_INSUFFICIENT_CONTEXT_MIN_SCORE = 0.15
 
+DEFAULT_ROUTER_RETRIEVAL_TOP_K = 12
+DEFAULT_ROUTER_MIN_CONFIDENCE = 0.15
+DEFAULT_ROUTER_SUPPORTING_MIN_RATIO = 0.4
+DEFAULT_ROUTER_MAX_SUPPORTING_ADVISORS = 2
+DEFAULT_ROUTER_RETRIEVAL_WEIGHT = 0.6
+DEFAULT_ROUTER_KEYWORD_WEIGHT = 0.4
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -326,6 +333,85 @@ class RagSettings:
             raise ConfigurationError(
                 "INSUFFICIENT_CONTEXT_MIN_SCORE must be zero or positive, got "
                 f"{self.insufficient_context_min_score}."
+            )
+
+
+@dataclass(frozen=True)
+class RouterSettings:
+    """Validated configuration for deterministic advisor routing (Milestone 5)."""
+
+    router_retrieval_top_k: int
+    router_min_confidence: float
+    router_supporting_min_ratio: float
+    router_max_supporting_advisors: int
+    router_retrieval_weight: float
+    router_keyword_weight: float
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "RouterSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        settings = cls(
+            router_retrieval_top_k=_parse_int(
+                env, "ROUTER_RETRIEVAL_TOP_K", DEFAULT_ROUTER_RETRIEVAL_TOP_K
+            ),
+            router_min_confidence=_parse_float(
+                env, "ROUTER_MIN_CONFIDENCE", DEFAULT_ROUTER_MIN_CONFIDENCE
+            ),
+            router_supporting_min_ratio=_parse_float(
+                env, "ROUTER_SUPPORTING_MIN_RATIO", DEFAULT_ROUTER_SUPPORTING_MIN_RATIO
+            ),
+            router_max_supporting_advisors=_parse_int(
+                env, "ROUTER_MAX_SUPPORTING_ADVISORS", DEFAULT_ROUTER_MAX_SUPPORTING_ADVISORS
+            ),
+            router_retrieval_weight=_parse_float(
+                env, "ROUTER_RETRIEVAL_WEIGHT", DEFAULT_ROUTER_RETRIEVAL_WEIGHT
+            ),
+            router_keyword_weight=_parse_float(
+                env, "ROUTER_KEYWORD_WEIGHT", DEFAULT_ROUTER_KEYWORD_WEIGHT
+            ),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support routing."""
+        if self.router_retrieval_top_k <= 0:
+            raise ConfigurationError(
+                f"ROUTER_RETRIEVAL_TOP_K must be a positive integer, got {self.router_retrieval_top_k}."
+            )
+
+        if self.router_min_confidence < 0:
+            raise ConfigurationError(
+                f"ROUTER_MIN_CONFIDENCE must be zero or positive, got {self.router_min_confidence}."
+            )
+
+        if not (0 < self.router_supporting_min_ratio <= 1):
+            raise ConfigurationError(
+                "ROUTER_SUPPORTING_MIN_RATIO must be greater than 0 and at most 1, got "
+                f"{self.router_supporting_min_ratio}."
+            )
+
+        if self.router_max_supporting_advisors < 0:
+            raise ConfigurationError(
+                "ROUTER_MAX_SUPPORTING_ADVISORS must be zero or positive, got "
+                f"{self.router_max_supporting_advisors}."
+            )
+
+        if self.router_retrieval_weight < 0:
+            raise ConfigurationError(
+                f"ROUTER_RETRIEVAL_WEIGHT must be zero or positive, got {self.router_retrieval_weight}."
+            )
+
+        if self.router_keyword_weight < 0:
+            raise ConfigurationError(
+                f"ROUTER_KEYWORD_WEIGHT must be zero or positive, got {self.router_keyword_weight}."
+            )
+
+        if self.router_retrieval_weight == 0 and self.router_keyword_weight == 0:
+            raise ConfigurationError(
+                "ROUTER_RETRIEVAL_WEIGHT and ROUTER_KEYWORD_WEIGHT cannot both be zero."
             )
 
 
