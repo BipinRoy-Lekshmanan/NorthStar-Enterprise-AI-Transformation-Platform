@@ -27,4 +27,8 @@ ADVISOR = Advisor(
         "question implies a specific severity."
     ),
     default_filters={"document_id": "NLC-ENG-007"},  # 16_Incident_Management.md
+    domain_keywords=(
+        "incident", "sev1", "sev-1", "severity", "outage", "post-incident",
+        "root cause", "war room", "incident commander", "major incident",
+    ),
 )

@@ -35,4 +35,8 @@ ADVISOR = Advisor(
         "one the answer applies to."
     ),
     default_filters={},
+    domain_keywords=(
+        "ai transformation", "ai strategy", "executive", "maturity", "roi",
+        "organizational", "governance", "transformation roadmap",
+    ),
 )

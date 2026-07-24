@@ -26,4 +26,8 @@ ADVISOR = Advisor(
         "regression) and note whether documented evidence of testing is required before release."
     ),
     default_filters={"document_id": "NLC-ENG-005"},  # 14_Testing_Strategy.md
+    domain_keywords=(
+        "testing", "test coverage", "quality gate", "unit test", "integration test",
+        "regression test", "qa", "test evidence", "test strategy",
+    ),
 )

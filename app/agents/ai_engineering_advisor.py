@@ -28,4 +28,8 @@ ADVISOR = Advisor(
         "accountability requirement for any AI-assisted output."
     ),
     default_filters={"document_id": "NLC-ENG-003"},  # 12_AI_Engineering_Standards.md
+    domain_keywords=(
+        "ai engineering", "ai-generated code", "prompt engineering", "code review",
+        "ai coding", "responsible ai", "human review", "ai-assisted",
+    ),
 )

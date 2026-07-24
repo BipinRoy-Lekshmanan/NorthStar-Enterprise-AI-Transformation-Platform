@@ -36,6 +36,11 @@ class Advisor:
     structure_guidance: str
     extra_guidance: str | None = None
     default_filters: dict[str, str] = field(default_factory=dict)
+    domain_keywords: tuple[str, ...] = ()
+    """Terms used only by `app.agents.router.AdvisorRouter`'s keyword
+    signal -- never affects retrieval, prompts, or `.ask()`. Optional and
+    additive: an advisor with no keywords simply contributes nothing to
+    that signal."""
 
     @property
     def system_prompt(self) -> str:

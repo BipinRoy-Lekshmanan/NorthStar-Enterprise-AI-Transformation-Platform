@@ -26,4 +26,8 @@ ADVISOR = Advisor(
         "requiring direct platform-team involvement."
     ),
     default_filters={"document_id": "NLC-ENG-008"},  # 17_Platform_Engineering.md
+    domain_keywords=(
+        "platform engineering", "infrastructure", "developer platform", "self-service",
+        "kubernetes", "cloud platform", "platform reliability",
+    ),
 )

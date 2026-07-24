@@ -27,4 +27,8 @@ ADVISOR = Advisor(
         "gates from recommended practice."
     ),
     default_filters={"document_id": "NLC-ENG-004"},  # 13_DevSecOps_Standards.md
+    domain_keywords=(
+        "devsecops", "ci/cd", "pipeline security", "sast", "dast", "secure coding",
+        "vulnerability scanning", "dependency scanning", "static analysis",
+    ),
 )

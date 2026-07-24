@@ -35,4 +35,8 @@ ADVISOR = Advisor(
         "security owner must approve any production decision."
     ),
     default_filters={},
+    domain_keywords=(
+        "security", "vulnerability", "threat", "encryption", "access control",
+        "authentication", "authorization", "security control", "credential",
+    ),
 )

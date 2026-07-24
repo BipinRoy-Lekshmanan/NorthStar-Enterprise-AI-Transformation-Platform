@@ -28,4 +28,8 @@ ADVISOR = Advisor(
         "Architecture Decision Record) rather than made informally."
     ),
     default_filters={"document_id": "NLC-ENG-002"},  # 11_Architecture_Principles.md
+    domain_keywords=(
+        "architecture", "architecture decision", "adr", "design principle",
+        "system design", "trade-off", "microservice", "modular", "solution design",
+    ),
 )
