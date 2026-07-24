@@ -115,3 +115,35 @@ class ApiClient:
 
     def run_rebuild(self, confirmation: str) -> dict:
         return self._request("POST", "/api/v1/knowledge/rebuild", json={"confirmation": confirmation})
+
+    # -- workflows -----------------------------------------------------------------
+
+    def list_workflows(self) -> list[dict]:
+        return self._request("GET", "/api/v1/workflows")
+
+    def get_workflow(self, workflow_id: str) -> dict:
+        return self._request("GET", f"/api/v1/workflows/{workflow_id}")
+
+    def list_workflow_examples(self, workflow_id: str) -> list[dict]:
+        return self._request("GET", f"/api/v1/workflows/{workflow_id}/examples")
+
+    def execute_workflow(self, workflow_id: str, inputs: dict) -> dict:
+        return self._request("POST", f"/api/v1/workflows/{workflow_id}/execute", json={"inputs": inputs})
+
+    def list_executions(self, workflow_id: str | None = None, page: int = 1, page_size: int = 25) -> dict:
+        params = {"page": page, "page_size": page_size}
+        if workflow_id:
+            params["workflow_id"] = workflow_id
+        return self._request("GET", "/api/v1/workflows/executions", params=params)
+
+    def get_execution(self, execution_id: str) -> dict:
+        return self._request("GET", f"/api/v1/workflows/executions/{execution_id}")
+
+    def resume_execution(self, execution_id: str) -> dict:
+        return self._request("POST", f"/api/v1/workflows/executions/{execution_id}/resume")
+
+    def cancel_execution(self, execution_id: str) -> dict:
+        return self._request("POST", f"/api/v1/workflows/executions/{execution_id}/cancel")
+
+    def get_workflow_report(self, execution_id: str) -> dict:
+        return self._request("GET", f"/api/v1/workflows/executions/{execution_id}/report")

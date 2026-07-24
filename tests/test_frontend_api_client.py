@@ -251,3 +251,110 @@ def test_run_rebuild_posts_confirmation_phrase(monkeypatch):
 
     assert captured["url"] == "http://test/api/v1/knowledge/rebuild"
     assert captured["json"] == {"confirmation": "REBUILD"}
+
+
+def test_list_workflows_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://test/api/v1/workflows"
+        return httpx.Response(200, json=[{"workflow_id": "architecture_review"}])
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.list_workflows() == [{"workflow_id": "architecture_review"}]
+
+
+def test_get_workflow_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/workflows/architecture_review"
+        return httpx.Response(200, json={"workflow_id": "architecture_review"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_workflow("architecture_review") == {"workflow_id": "architecture_review"}
+
+
+def test_list_workflow_examples_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/workflows/architecture_review/examples"
+        return httpx.Response(200, json=[{"name": "example.json"}])
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.list_workflow_examples("architecture_review") == [{"name": "example.json"}]
+
+
+def test_execute_workflow_posts_inputs_wrapped_in_envelope(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"execution_id": "abc"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.execute_workflow("architecture_review", {"solution_name": "X"})
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/workflows/architecture_review/execute"
+    assert captured["json"] == {"inputs": {"solution_name": "X"}}
+
+
+def test_list_executions_passes_workflow_id_filter_and_pagination(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return httpx.Response(200, json={"items": [], "page": 1, "page_size": 25, "total_items": 0, "total_pages": 0})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.list_executions(workflow_id="architecture_review", page=2, page_size=10)
+
+    assert captured["url"] == "http://test/api/v1/workflows/executions"
+    assert captured["params"] == {"page": 2, "page_size": 10, "workflow_id": "architecture_review"}
+
+
+def test_get_execution_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/workflows/executions/exec-1"
+        return httpx.Response(200, json={"execution_id": "exec-1"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_execution("exec-1") == {"execution_id": "exec-1"}
+
+
+def test_resume_execution_posts_to_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "POST"
+        assert url == "http://test/api/v1/workflows/executions/exec-1/resume"
+        return httpx.Response(200, json={"status": "running"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.resume_execution("exec-1") == {"status": "running"}
+
+
+def test_cancel_execution_posts_to_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "POST"
+        assert url == "http://test/api/v1/workflows/executions/exec-1/cancel"
+        return httpx.Response(200, json={"status": "cancelled"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.cancel_execution("exec-1") == {"status": "cancelled"}
+
+
+def test_get_workflow_report_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/workflows/executions/exec-1/report"
+        return httpx.Response(200, json={"sections": {}})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_workflow_report("exec-1") == {"sections": {}}
