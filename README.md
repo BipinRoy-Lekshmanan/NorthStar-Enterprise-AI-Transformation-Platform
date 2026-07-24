@@ -158,8 +158,13 @@ imports a vendor SDK directly.
 ### Run the indexer
 
 ```bash
-python -m app.embeddings.indexer
+python -m app.rag.index
 ```
+
+(`app.rag.index` is a thin alias for `app.embeddings.indexer` — both work;
+`app.rag.index` is the canonical command since Milestone 3, keeping all
+user-facing RAG commands under one namespace: `app.rag.index` /
+`app.rag.ask` / `app.rag.evaluate`.)
 
 Runs the Milestone 1 pipeline in-process, then syncs the vector store:
 new/changed chunks are embedded and upserted, chunks for removed/edited
@@ -252,9 +257,12 @@ cp .env.example .env
 ### Run it end to end
 
 ```bash
-python -m app.ingestion.pipeline      # Milestone 1: discover + chunk
-python -m app.embeddings.indexer      # Milestone 2: embed + index
+pytest                                # run the full test suite
+python -m app.rag.index               # discover + chunk + embed + index
 python -m app.rag.ask "How should a Sev-1 incident be handled?"
+python -m app.rag.ask "How should a Sev-1 incident be handled?" --show-diagnostics
+python -m app.rag.ask "What is Northstar's current stock price?"  # insufficient-context
+python -m app.rag.evaluate            # run the seed evaluation suite
 ```
 
 Useful flags: `--top-k`, `--min-score`, `--model`, `--show-context`,
@@ -305,8 +313,11 @@ network calls and no installed SDK required.
 ### Run the evaluation
 
 ```bash
-python -m app.evaluation.rag_evaluator
+python -m app.rag.evaluate
 ```
+
+(alias for `app.evaluation.rag_evaluator`, kept alongside it for
+completeness in the `app.rag.*` command surface.)
 
 Checks ~14 seed questions (`data/evaluation_sets/milestone3_eval.json`)
 against a real `RagService`: whether the expected document was
@@ -382,7 +393,7 @@ based solely on the Northstar knowledge base; general industry guidance was not 
   real life?") a nontrivial score purely from shared vocabulary
   ("Northstar") and short-vector hash-collision noise, so the default
   threshold does not reliably distinguish "irrelevant" from "relevant" —
-  confirmed via `python -m app.evaluation.rag_evaluator` (both
+  confirmed via `python -m app.rag.evaluate` (both
   insufficient-context seed cases misclassified as sufficient under
   `EMBEDDING_PROVIDER=local`). This is expected to improve substantially
   with `EMBEDDING_PROVIDER=openai`'s real semantic embeddings; it was not
