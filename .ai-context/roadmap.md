@@ -51,16 +51,17 @@ unreliable (lexical similarity, not semantic — see
 
 ## Milestone 4 — Pluggable Advisor Framework ✅ Complete
 
-8 domain advisors (Architecture, AI Engineering, DevSecOps, Testing,
-Security, Platform Engineering, Incident Management, Executive AI
-Transformation) as thin, declarative specializations over the unchanged
-Milestone 3 `RagService` — persona + optional default retrieval filter +
-response structure + extra guidance, composed on top of shared grounding
-guardrails every advisor gets automatically. No advisor routing,
-multi-agent orchestration, UI, or workflow automation.
+10 domain advisors (Architecture, AI Engineering, DevSecOps, Testing,
+Release, Platform Engineering, Incident Management, Developer
+Experience, Security, Executive AI Transformation) as thin, declarative
+specializations over the unchanged Milestone 3 `RagService` — persona +
+optional default retrieval filter + response structure + extra guidance,
+composed on top of shared grounding guardrails every advisor gets
+automatically. No advisor routing, multi-agent orchestration, UI, or
+workflow automation.
 
 Delivered in `app/agents/base_agent.py` (`Advisor`), `registry.py`, and
-8 advisor definition modules, plus two purely-additive optional kwargs
+10 advisor definition modules, plus two purely-additive optional kwargs
 on `app.config.prompt_config.build_prompt()` and
 `RagService.ask()` (`system_prompt`, `prompt_version`) — every existing
 call site omits both, so Milestone 1-3 behavior is provably unchanged
@@ -71,15 +72,49 @@ sample output. Verified against the real knowledge base: filtered
 advisors (e.g. Testing) correctly scope retrieval to their document;
 unfiltered advisors (Security, Executive AI Transformation) correctly
 retrieve across multiple documents; the plain no-advisor CLI path is
-byte-identical to Milestone 3. 182 tests total (129 unchanged + 53 new).
+byte-identical to Milestone 3. (Release and Developer Experience were
+added during Milestone 5's build to close the gap between the 8 advisors
+originally implemented and the 10 named in the platform's advisor list —
+see `.ai-context/decisions.md`.)
 
-## Milestone 5+ — not started
+## Milestone 5 — Advisor Router & Controlled Multi-Advisor Synthesis ✅ Complete
 
-Advisor routing (automatically selecting an advisor for a question),
-multi-agent orchestration, a richer evaluation/observability harness
-that scores advisor-specific answers, and possibly a thin API layer are
-still empty scaffolding under `app/` (`agents/orcherstrator.py`, `api/`,
-`telemetry/`, and everything in `rag/`/`services/`/`evaluation/` not
-listed above). Build on top of Milestone 4's `Advisor`/`ADVISOR_REGISTRY`
-rather than re-implementing retrieval, context construction, prompting,
-or citation parsing.
+Deterministic advisor routing (no LLM call) and bounded multi-advisor
+synthesis (at most one extra LLM call, only when supporting advisors are
+selected, operating strictly on already-grounded advisor answers). No
+autonomous agents, recursive planning, open-ended tool use, self-directed
+workflows, shell execution, production actions, or long-running agent
+loops — every call sequence is fixed and bounded (at most 4 LLM calls
+total: 1 primary + up to 2 supporting + 1 synthesis).
+
+Delivered in `app/agents/router.py` (`RoutingDecision`, `AdvisorRouter`)
+and `app/agents/orchestrator.py` (`ConsolidatedAdvisorResponse`,
+`AdvisorOrchestrator`), plus `RouterSettings` in
+`app/config/settings.py`, `SynthesisInput`/`build_synthesis_prompt()` in
+`app/config/prompt_config.py`, and two purely-additive items on existing
+Milestone 3/4 files: `RagService.llm` (getter, mirrors `.retriever`) and
+`Advisor.domain_keywords` (optional tuple, defaults empty). CLI extended
+with `--auto-route` (mutually exclusive with `--advisor`) on the
+existing `app.rag.ask`. See root `README.md` for the full design and
+sample output. Verified against the real knowledge base: an obvious
+single-domain question routes with zero supporting advisors and no
+synthesis call; a genuinely cross-domain question selects a supporting
+advisor and synthesizes exactly once; an unrelated question sets
+`fallback_used=True`; the manual `--advisor` path is unaffected. 214
+tests total (182 unchanged + 32 new). **Known limitation carried over
+from Milestone 2/3**: routing quality (the retrieval signal specifically)
+inherits the default `local` embedding provider's lexical-not-semantic
+limitation — mitigated for the fallback case specifically by keeping the
+retrieval signal on its absolute similarity scale rather than
+normalizing it away (see `.ai-context/decisions.md`).
+
+## Milestone 6+ — not started
+
+Evaluating advisor/synthesis answer quality specifically (extending
+Milestone 3's evaluation harness beyond generic RAG answers), further
+multi-agent orchestration beyond bounded single-shot synthesis, and
+possibly a thin API layer are still empty scaffolding under `app/`
+(`api/`, `telemetry/`, and everything in `rag/`/`services/`/`evaluation/`
+not listed above). Build on top of Milestone 5's
+`AdvisorRouter`/`AdvisorOrchestrator` rather than re-implementing
+routing or synthesis bounding.

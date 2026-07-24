@@ -49,14 +49,25 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 
 | Module | Purpose |
 |---|---|
-| `agents/base_agent.py` | `Advisor` frozen dataclass — persona + structure + extra guidance + default filters, `ask()` delegates straight to `RagService.ask()` |
+| `agents/base_agent.py` | `Advisor` frozen dataclass — persona + structure + extra guidance + default filters + `domain_keywords`, `ask()` delegates straight to `RagService.ask()` |
 | `agents/registry.py` | `ADVISOR_REGISTRY`, `get_advisor()`, `list_advisors()`, `UnknownAdvisorError` |
-| `agents/architecture_advisor.py`, `ai_engineering_advisor.py`, `devsecops_advisor.py`, `testing_advisor.py`, `platform_advisor.py`, `incident_advisor.py` | 6 advisors with a default `document_id` filter (each maps to one well-populated KB document) |
+| `agents/architecture_advisor.py`, `ai_engineering_advisor.py`, `devsecops_advisor.py`, `testing_advisor.py`, `release_advisor.py`, `platform_advisor.py`, `incident_advisor.py`, `developer_experience_advisor.py` | 8 advisors with a default `document_id` filter (each maps to one well-populated KB document) |
 | `agents/security_advisor.py`, `ai_transformation_advisor.py` | 2 advisors with **no** default filter (cross-cutting topics spread across multiple documents) |
 | `rag/ask.py` | + `--advisor <id>` / `--list-advisors` flags (same CLI, no new command) |
 
+## Implemented (Milestone 5)
+
+| Module | Purpose |
+|---|---|
+| `rag/pipeline.py` | + `RagService.llm` property (getter only, mirrors the existing `.retriever` property) |
+| `config/settings.py` | + `RouterSettings.from_env()` — same file, same pattern as Ingestion/Retrieval/RagSettings |
+| `config/prompt_config.py` | + `SynthesisInput`, `build_synthesis_prompt()` — reuses `GROUNDING_GUARDRAILS` for the one bounded synthesis call |
+| `agents/router.py` | `RoutingDecision` frozen dataclass, `AdvisorRouter` — deterministic primary/supporting advisor selection from a retrieval signal + a keyword signal, no LLM call |
+| `agents/orchestrator.py` | `ConsolidatedAdvisorResponse` frozen dataclass, `AdvisorOrchestrator` — bounded execution (primary → supporting → at most one synthesis call), citation dedup by `chunk_id`, `build_default_orchestrator()` |
+| `rag/ask.py` | + `--auto-route` flag (mutually exclusive with `--advisor`) — always prints a `Routing:` block, then the consolidated answer |
+
 See the [root README](../README.md) for how to run the pipeline, indexer,
-retriever, RAG assistant, advisors, evaluator, and tests.
+retriever, RAG assistant, advisors, router, evaluator, and tests.
 
 ## Placeholders (future milestones)
 
@@ -68,10 +79,8 @@ Every other module here (`api/`, `auth/`, `cache/`, `telemetry/`,
 `services/logging_service.py`, `services/vector_service.py`,
 `evaluation/benchmark_runner.py`, `evaluation/llm_judge.py`,
 `evaluation/retrieval_metrics.py`, `evaluation/sample_questions.py`,
-`agents/business_advisor.py`, `agents/engineering_advisor.py`,
-`agents/orcherstrator.py`) is empty scaffolding — the last three
-deliberately: `business_advisor.py` isn't one of the 8 requested
-advisors, `engineering_advisor.py` was superseded by the more specific
-`ai_engineering_advisor.py`, and `orcherstrator.py` is reserved for a
-future milestone that adds advisor routing/orchestration (explicitly out
-of scope for Milestone 4). Do not assume any behavior from any of these.
+`agents/business_advisor.py`, `agents/engineering_advisor.py`) is empty
+scaffolding — deliberately: `business_advisor.py` isn't one of the 10
+requested advisors, and `engineering_advisor.py` was superseded by the
+more specific `ai_engineering_advisor.py`. Do not assume any behavior
+from any of these.

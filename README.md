@@ -17,8 +17,9 @@ observability. It is being built incrementally, milestone by milestone.
 | **1** | Knowledge ingestion foundation | ✅ Complete |
 | **2** | Semantic indexing & retrieval | ✅ Complete |
 | **3** | Grounded RAG assistant (CLI) | ✅ Complete |
-| **4** | Pluggable advisor framework (8 domain advisors) | ✅ Complete |
-| 5+ | Advisor routing, multi-agent orchestration, UI/API | Not started |
+| **4** | Pluggable advisor framework (10 domain advisors) | ✅ Complete |
+| **5** | Advisor router & controlled multi-advisor synthesis | ✅ Complete |
+| 6+ | Multi-agent orchestration beyond bounded synthesis, evaluation of advisor answers, UI/API | Not started |
 
 ## Milestone 1 — Knowledge Ingestion Foundation
 
@@ -80,8 +81,8 @@ extraction, chunking, the end-to-end ingestion pipeline (Milestone 1),
 plus the embedding provider, vector store, incremental indexer, and
 retriever (Milestone 2). All Milestone 2 tests use the local embedding
 provider — no network calls, no API key required. (58 further Milestone 3
-tests and 53 further Milestone 4 advisor tests are described below —
-182 total.)
+tests, 53 further Milestone 4 advisor tests, and 32 further Milestone 5
+router/orchestrator tests are described below — 214 total.)
 
 ### Configuration
 
@@ -306,9 +307,9 @@ total duration. Not shown by default to keep normal output readable.
 python -m pytest
 ```
 
-182 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
-Milestone 4, all unchanged/additive). All Milestone 3 tests use
-`FakeModelProvider`; `OpenAIModelProvider` is
+214 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
+Milestone 4 + 32 from Milestone 5, all unchanged/additive). All
+Milestone 3 tests use `FakeModelProvider`; `OpenAIModelProvider` is
 tested by injecting a fake `openai` module into `sys.modules`, exercising
 the real request-building/retry/error-translation logic with zero
 network calls and no installed SDK required.
@@ -433,7 +434,7 @@ section originally flagged as future work.
 
 ## Milestone 4 — Pluggable Advisor Framework
 
-Eight domain advisors, each a **thin, declarative specialization** over
+Ten domain advisors, each a **thin, declarative specialization** over
 the exact same `RagService` from Milestone 3 — a persona, optional
 default retrieval filters, and a response structure/extra guidance
 layered on top of the same shared grounding guardrails every advisor
@@ -441,7 +442,8 @@ gets for free. **No changes to ingestion, indexing, retrieval, citation
 parsing, or evaluation** — verified by keeping the entire Milestone 1–3
 test suite green and the plain (no-advisor) CLI path byte-identical to
 Milestone 3's output. No advisor routing, multi-agent orchestration, UI,
-or workflow automation — advisor selection is manual, via `--advisor`.
+or workflow automation — advisor selection is manual, via `--advisor`
+(automatic routing arrives in Milestone 5 below).
 
 | Advisor | id | Default filter | Why |
 |---|---|---|---|
@@ -449,8 +451,10 @@ or workflow automation — advisor selection is manual, via `--advisor`.
 | AI Engineering | `ai-engineering` | `NLC-ENG-003` | Single well-populated source doc |
 | DevSecOps | `devsecops` | `NLC-ENG-004` | Single well-populated source doc |
 | Testing | `testing` | `NLC-ENG-005` | Single well-populated source doc |
-| Platform Engineering | `platform-engineering` | `NLC-ENG-008` | Single well-populated source doc |
+| Release | `release` | `NLC-ENG-006` | Single well-populated source doc |
 | Incident Management | `incident-management` | `NLC-ENG-007` | Single well-populated source doc |
+| Platform Engineering | `platform-engineering` | `NLC-ENG-008` | Single well-populated source doc |
+| Developer Experience | `developer-experience` | `NLC-ENG-009` | Single well-populated source doc |
 | Security | `security` | *(none)* | Cross-cutting: spans DevSecOps + AI Engineering's AI Security section; `Security_Architecture.md` is an empty placeholder |
 | Executive AI Transformation | `executive-ai-transformation` | *(none)* | Cross-cutting: "AI Transformation Perspective" content is repeated across many documents |
 
@@ -514,12 +518,14 @@ Northstar require?", correctly pulled from **both**
 `13_DevSecOps_Standards.md` — exactly the cross-document behavior its
 lack of a default filter is meant to enable.
 
-### Adding a 9th advisor
+### Adding an 11th advisor
 
-1. Create `app/agents/<name>_advisor.py` exporting `ADVISOR = Advisor(...)`.
+1. Create `app/agents/<name>_advisor.py` exporting `ADVISOR = Advisor(...)`,
+   including a non-empty `domain_keywords` tuple (used by Milestone 5's
+   router — see below).
 2. Add one line to `app/agents/registry.py`.
-3. No other file changes required — the CLI and `--list-advisors` pick
-   it up automatically.
+3. No other file changes required — the CLI, `--list-advisors`, and
+   `--auto-route` all pick it up automatically.
 
 ### Tests
 
@@ -529,21 +535,225 @@ structural checks, filter-merging in isolation) and
 a filtered advisor only retrieves its own document, an unfiltered one
 retrieves across documents, a filtered advisor with no matching document
 correctly reports insufficient context rather than fabricating, and the
-plain no-advisor path is unaffected). 182 tests total.
+plain no-advisor path is unaffected).
 
 ### Next milestone
 
-Advisor routing (automatically picking an advisor for a question),
-multi-agent orchestration, an evaluation harness that scores advisor
-answers specifically, and — only if it fits naturally — a thin API
-layer are still not implemented.
+See Milestone 5 below — it delivers the automatic advisor routing this
+section originally flagged as future work, plus controlled multi-advisor
+synthesis.
+
+## Milestone 5 — Advisor Router & Controlled Multi-Advisor Synthesis
+
+Automatic advisor selection and bounded multi-advisor synthesis, built
+entirely on top of the unchanged Milestone 1–4 stack. **No changes to
+ingestion, indexing, retrieval, citation parsing, evaluation, or any of
+the 10 advisors' prompts/filters/behavior** — the only edits to existing
+files are two purely-additive items: `RagService.llm` (a getter mirroring
+the existing `.retriever` property) and `Advisor.domain_keywords` (an
+optional tuple, defaulting to empty, that only the router reads). No
+autonomous agents, recursive planning, open-ended tool use, self-directed
+workflows, shell execution, or production actions — routing and synthesis
+are both fixed, bounded sequences of calls into the existing RAG
+pipeline, never model-directed branching.
+
+```
+Question
+   │
+   ▼
+AdvisorRouter.route()                         (app/agents/router.py)
+   │  two deterministic signals, no LLM call:
+   │  - retrieval signal: one unfiltered Retriever.retrieve() call;
+   │    each result's score attributed to whichever advisor's
+   │    default_filters["document_id"] matches, averaged per advisor
+   │    (kept on the retriever's own absolute cosine-similarity scale —
+   │    never re-normalized, so an off-topic question genuinely scores lower)
+   │  - keyword signal: substring match of Advisor.domain_keywords
+   │    against the lowercased question, normalized 0..1 by max
+   │  combined = retrieval_weight * retrieval + keyword_weight * keyword
+   ▼
+RoutingDecision (primary_advisor, supporting_advisors, confidence,
+                 rationale, detected_domains, fallback_used)
+   │
+   ▼
+AdvisorOrchestrator.ask()                     (app/agents/orchestrator.py)
+   │  1. call primary Advisor.ask() (unchanged Milestone 4 call)
+   │  2. primary insufficient context? → return immediately, no further calls
+   │  3. call each supporting Advisor.ask() (unchanged Milestone 4 call)
+   │  4. no supporting advisors? → return primary's answer verbatim, 0 extra LLM calls
+   │  5. supporting advisors present? → exactly ONE bounded synthesis call,
+   │     over already-grounded advisor answers only (never raw KB text)
+   ▼
+ConsolidatedAdvisorResponse (routing, primary_answer, supporting_answers,
+                              answer, citations, warnings, synthesized, ...)
+```
+
+Bounded by construction: at most **1 (primary) + `ROUTER_MAX_SUPPORTING_ADVISORS`
+(supporting, default 2) + 1 (synthesis) = 4 LLM calls**, always terminates,
+no loop, no tool use. Citations in the final response are the union of
+every advisor's own `Citation` objects, deduped by `chunk_id` — **never
+re-parsed from the synthesis text**, so nothing the synthesis step writes
+can fabricate a citation.
+
+### Why routing doesn't call an LLM
+
+The milestone's hard requirement — "deterministic, explainable, testable,
+human-controlled" — ruled out an LLM classification call for routing:
+identical input must always produce identical output, and the reasoning
+must be inspectable without re-running a model. Both signals reuse
+existing, already-tested infrastructure (`Retriever` from Milestone 2,
+`domain_keywords` substring matching) rather than adding a new
+dependency.
+
+One correctness detail worth calling out: the retrieval signal is
+deliberately **not** normalized to make the top-scoring advisor "1.0" —
+early testing surfaced that doing so made *every* question look
+confidently routable (an irrelevant question's best-matching document is
+still "the best of a bad set," and max-normalizing throws away how bad
+that set actually was). Keeping the signal on the retriever's own
+absolute cosine-similarity scale preserves that information: a genuinely
+on-topic question's best chunk scored `0.396`, an off-topic question's
+best chunk scored `0.225` — different enough for `fallback_used` to
+reliably distinguish the two once the confidence threshold sits between
+them.
+
+### CLI
+
+```bash
+python -m app.rag.ask "How should a Sev-1 incident be handled?" --auto-route
+python -m app.rag.ask "..." --auto-route --show-diagnostics
+```
+
+`--auto-route` is mutually exclusive with `--advisor`. Output always
+shows a `Routing:` block (routing is the point, so it's never hidden
+behind another flag); `--show-diagnostics` additionally shows per-call
+diagnostics for the primary advisor, each supporting advisor, and the
+synthesis call (if one happened).
+
+### Sample output — single clear domain (`synthesized=False`)
+
+```
+Routing:
+  primary_advisor:      incident-management
+  supporting_advisors:  (none)
+  confidence:           0.589
+  fallback_used:        False
+  detected_domains:     ['Incident Management Advisor']
+  rationale:            Selected 'incident-management' with combined score 0.589 (retrieval=0.316, keyword=1.000).
+
+Question:
+How should a Sev-1 incident be handled?
+
+Answer:
+...
+```
+
+### Sample output — cross-domain question (`synthesized=True`)
+
+```
+Routing:
+  primary_advisor:      release
+  supporting_advisors:  ['testing']
+  confidence:           0.563
+  fallback_used:        False
+  detected_domains:     ['Release Advisor', 'Testing Advisor']
+  rationale:            Selected 'release' with combined score 0.563 (retrieval=0.271, keyword=1.000).
+
+Question:
+What test coverage and release evidence is required before a canary deployment can proceed?
+```
+
+`--show-diagnostics` on this question confirms exactly one synthesis
+call: `[synthesis] provider: fake  model: fake-echo-v1`.
+
+### Sample output — unrelated question (`fallback_used=True`)
+
+```
+Routing:
+  primary_advisor:      release
+  supporting_advisors:  ['ai-engineering', 'incident-management']
+  confidence:           0.135
+  fallback_used:        True
+  detected_domains:     (none)
+  rationale:            Selected 'release' with combined score 0.135 (retrieval=0.225, keyword=0.000). Below minimum confidence 0.150; treating as a low-confidence fallback.
+
+Question:
+What is the best recipe for chocolate chip cookies?
+```
+
+The router still names a best-guess primary advisor (no sentinel "none"
+case — simpler contract, always resolvable), just flags low confidence
+for the human reading the output. The underlying (unchanged)
+`RagService` insufficiency logic then handles the actual answer honestly
+per-advisor, exactly as it did before this milestone.
+
+### Configuration additions
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ROUTER_RETRIEVAL_TOP_K` | `12` | Unfiltered retrieval depth used only to compute the router's retrieval signal |
+| `ROUTER_MIN_CONFIDENCE` | `0.15` | Below this combined score, `fallback_used=True` |
+| `ROUTER_SUPPORTING_MIN_RATIO` | `0.4` | A candidate becomes "supporting" only if its score is at least this fraction of the primary's |
+| `ROUTER_MAX_SUPPORTING_ADVISORS` | `2` | Hard cap on supporting advisors selected |
+| `ROUTER_RETRIEVAL_WEIGHT` | `0.6` | Weight of the retrieval-based signal in the combined score |
+| `ROUTER_KEYWORD_WEIGHT` | `0.4` | Weight of the keyword-based signal in the combined score |
+
+Validated eagerly by `RouterSettings.from_env()`, same pattern as every
+other settings class.
+
+### Tests
+
+`tests/test_router.py` (9 tests, isolated fixture KB + synthetic
+advisors): retrieval-signal document attribution, keyword-signal hits,
+correct primary for an obvious single-domain question, zero supporting
+advisors for that same question, a supporting advisor selected only for
+a genuinely cross-domain question, the supporting-advisor cap is
+enforced, `fallback_used=True` for an unrelated question,
+`detected_domains` reflects keyword hits independent of final selection,
+and routing determinism across repeated calls.
+
+`tests/test_orchestrator.py` (5 tests, real `RagService` + real
+`Advisor`s + `FakeModelProvider`, a stub router isolating orchestration
+from routing-signal computation): single-advisor path has zero extra LLM
+calls and a verbatim answer, multi-advisor path makes exactly one
+synthesis call, citations are a deduped union with no source
+re-derivation from synthesis text, primary-insufficient-context
+short-circuits before any supporting or synthesis call, warnings
+aggregate from every advisor call.
+
+Plus `tests/test_advisors.py` extended to the full 10-advisor set with a
+non-empty-`domain_keywords` check per advisor. 214 tests total (69 from
+Milestones 1–2 + 58 from Milestone 3 + 53 from Milestone 4 + 32 from
+Milestone 5).
+
+### Limitations
+
+- Routing quality inherits Milestone 2's default `local` embedding
+  provider limitation: the retrieval signal is only as good as a
+  lexical hashing embedding. It is expected to improve with
+  `EMBEDDING_PROVIDER=openai`'s real semantic embeddings, same caveat as
+  Milestone 3's insufficient-context detection.
+- The retrieval signal only covers advisors with a `document_id` default
+  filter; the two cross-cutting advisors (Security, Executive AI
+  Transformation) are routed to purely via keyword matching.
+- Synthesis quality is bounded by what the primary/supporting advisors
+  already said — by design, it cannot introduce anything they didn't
+  already ground, so a weak underlying advisor answer produces a weak
+  synthesis.
+
+### Next milestone
+
+Evaluating advisor/synthesis answer quality specifically (extending
+Milestone 3's evaluation harness), and — only if it fits naturally — a
+thin API layer, are still not implemented.
 
 ## Project layout
 
 ```
 app/
-  config/       settings.py (Ingestion/Retrieval/RagSettings), logging.py,
-                prompt_config.py                                 — M1 + M2 + M3 (+ M4: build_system_prompt)
+  config/       settings.py (Ingestion/Retrieval/Rag/RouterSettings), logging.py,
+                prompt_config.py                                 — M1 + M2 + M3 (+ M4: build_system_prompt,
+                                                                     M5: SynthesisInput/build_synthesis_prompt)
   models/       document.py, chunk.py, query.py,
                 response.py (+ RagAnswer/RagDiagnostics),
                 citation.py                                      — M1 + M2 + M3 (pydantic)
@@ -555,7 +765,8 @@ app/
                 (emdedding_service.py, reranker.py are future-milestone placeholders)
   rag/          retriever.py                                     — Milestone 2
                 context_builder.py, citation_engine.py, pipeline.py,
-                ask.py                                            — Milestone 3
+                ask.py                                            — Milestone 3 (+ M4: --advisor,
+                                                                     M5: --auto-route)
                 (generator.py, hybrid_search.py stay empty: model invocation
                 is already a full concern via LanguageModelProvider, and
                 hybrid search is out of scope)
@@ -568,10 +779,14 @@ app/
   agents/       base_agent.py (Advisor), registry.py,
                 architecture_advisor.py, ai_engineering_advisor.py,
                 devsecops_advisor.py, testing_advisor.py,
-                security_advisor.py, platform_advisor.py,
-                incident_advisor.py, ai_transformation_advisor.py  — Milestone 4
-                (business_advisor.py, engineering_advisor.py, orcherstrator.py
-                stay empty: not one of the 8 advisors / routing is out of scope)
+                release_advisor.py, incident_advisor.py,
+                platform_advisor.py, developer_experience_advisor.py,
+                security_advisor.py, ai_transformation_advisor.py  — Milestone 4 (10 advisors)
+                router.py (AdvisorRouter, RoutingDecision),
+                orchestrator.py (AdvisorOrchestrator,
+                ConsolidatedAdvisorResponse)                       — Milestone 5
+                (business_advisor.py, engineering_advisor.py
+                stay empty: not one of the 10 advisors)
   api/, telemetry/, ...                                            — placeholders for later milestones
 enterprise_knowledge_base/   Northstar's Markdown knowledge base (source data)
 data/processed/               generated ingestion artifacts (git-ignored)
@@ -580,5 +795,5 @@ vector_store/                  generated embeddings + index (git-ignored)
 tests/                         pytest suite
 ```
 
-Everything not listed above as M1/M2/M3/M4 is intentionally still an
+Everything not listed above as M1/M2/M3/M4/M5 is intentionally still an
 empty placeholder — scaffolding for milestones that haven't been built yet.

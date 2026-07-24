@@ -174,3 +174,74 @@
   `__init__.py`, same pattern as Milestones 1–3, now that
   `app/agents/base_agent.py` is used. Left `orcherstrator.py`'s own
   filename typo alone — it's still unimplemented and out of scope.
+
+## Milestone 5 — Advisor Router & Controlled Multi-Advisor Synthesis
+
+- **Routing is computed from two deterministic signals, never an LLM
+  call.** The milestone's hard requirement ("deterministic, explainable,
+  testable, human-controlled") ruled out an LLM classification step:
+  identical input must always produce identical output. Signal 1 reuses
+  the exact Milestone 2 `Retriever` (one unfiltered call, scores
+  attributed to whichever advisor's `default_filters["document_id"]`
+  matches). Signal 2 is substring matching against a new
+  `Advisor.domain_keywords` field, covering the two cross-cutting
+  advisors (Security, Executive AI Transformation) that have no
+  retrieval-filter signal.
+- **The retrieval signal is kept on its absolute cosine-similarity
+  scale, not normalized to make the top advisor "1.0".** This was a
+  live bug caught during manual verification, not a design choice made
+  up front: max-normalizing per-question made *every* question look
+  confidently routable, because an irrelevant question's best-matching
+  document is still "the best of a bad set" and normalization discarded
+  how bad that set actually was (`fallback_used` never triggered even
+  for "what is the best recipe for chocolate chip cookies?"). Fixed by
+  averaging each advisor's matched-chunk scores without renormalizing —
+  confirmed empirically that an on-topic question's best chunk scores
+  meaningfully higher (~0.40) than an off-topic one's (~0.22) even under
+  the lexical `local` embedding provider, which is enough separation for
+  `ROUTER_MIN_CONFIDENCE=0.15` to distinguish them reliably.
+- **The router always names a primary advisor, even under low
+  confidence** — no sentinel "none"/"unknown" advisor id. `fallback_used`
+  is a separate boolean flag on `RoutingDecision`. Simpler contract for
+  `AdvisorOrchestrator` (primary is always resolvable via
+  `get_advisor()`) and for the human reading CLI output, who sees both
+  the best guess and an explicit low-confidence signal together.
+- **Synthesis is strictly bounded**: at most one extra LLM call, only
+  triggered when `RoutingDecision.supporting_advisors` is non-empty, and
+  its input is *only* the already-grounded `RagAnswer.answer` text from
+  the primary and supporting advisors — never raw knowledge-base
+  chunks. This is what makes multi-advisor synthesis safe to add without
+  violating "no autonomous/recursive/open-ended" constraints: the model
+  has nothing to invent new claims from, only to consolidate what
+  already-grounded advisors said. `build_synthesis_prompt()` reuses
+  `GROUNDING_GUARDRAILS` via the same `build_system_prompt()` every
+  advisor uses, with `extra_guidance` redirecting citation style to
+  advisor-name attribution instead of `[S#]` tags (synthesis input isn't
+  numbered sources).
+- **Final citations are a `chunk_id`-deduped union of every advisor's own
+  `Citation` objects, never re-derived from the synthesis text.** Nothing
+  the synthesis step writes can fabricate a citation — the citation list
+  is fully determined before the synthesis call even happens.
+- **Primary-insufficient-context short-circuits before any supporting or
+  synthesis call** — same "don't proceed on weak context" philosophy
+  `RagService` already enforces at the single-advisor level, extended to
+  the orchestrator level.
+- **Added the Release and Developer Experience advisors during this
+  milestone's build**, closing the gap between the 8 advisors Milestone
+  4 shipped and the 10 named in the platform's advisor list (confirmed
+  with the user rather than assumed): `release_advisor.py` →
+  `NLC-ENG-006`, `developer_experience_advisor.py` → `NLC-ENG-009`, both
+  single well-populated source documents. Retroactively documented under
+  Milestone 4 in the README/roadmap since that's conceptually where they
+  belong (the platform's advisor set), with a note that they were
+  actually implemented during Milestone 5.
+- **`RagService.llm` and `Advisor.domain_keywords` are the only two edits
+  to pre-Milestone-5 files**, both purely additive (a new getter, a new
+  optional dataclass field defaulting to `()`) — verified by re-running
+  the entire Milestone 1-4 test suite unmodified (still green) before
+  adding any Milestone 5 test.
+- **Fixed a pre-existing bug**: `app/agents/orcherstrator.py` (typo,
+  empty stub reserved by Milestone 4's decisions log for "a future
+  milestone that adds advisor routing/orchestration") was deleted and
+  replaced by `app/agents/orchestrator.py` (correct spelling), now that
+  it's actually implemented.
