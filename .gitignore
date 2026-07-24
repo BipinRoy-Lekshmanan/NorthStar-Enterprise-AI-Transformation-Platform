@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# generated ingestion artifacts
+data/processed/*.jsonl
+data/processed/*.json

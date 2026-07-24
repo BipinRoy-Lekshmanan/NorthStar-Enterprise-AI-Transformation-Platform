@@ -1,0 +1,144 @@
+"""Centralized configuration for the knowledge ingestion pipeline.
+
+All values are sourced from environment variables (optionally loaded from a
+``.env`` file via python-dotenv) with sane defaults for local development.
+See ``.env.example`` at the project root for the full list of variables.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Mapping
+
+from dotenv import load_dotenv
+
+# app/config/settings.py -> app/config -> app -> project root
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(PROJECT_ROOT / ".env")
+
+DEFAULT_KNOWLEDGE_BASE_DIRS = "enterprise_knowledge_base"
+DEFAULT_SUPPORTED_EXTENSIONS = ".md"
+DEFAULT_CHUNK_SIZE = 1500
+DEFAULT_CHUNK_OVERLAP = 200
+DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_OUTPUT_DIR = "data/processed"
+
+VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+class ConfigurationError(ValueError):
+    """Raised when ingestion configuration is missing or invalid."""
+
+
+def _resolve(path_str: str) -> Path:
+    path = Path(path_str.strip())
+    return path if path.is_absolute() else (PROJECT_ROOT / path)
+
+
+def _split_csv(raw: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+@dataclass(frozen=True)
+class IngestionSettings:
+    """Validated configuration for a single ingestion run."""
+
+    knowledge_base_dirs: tuple[Path, ...]
+    supported_extensions: tuple[str, ...]
+    chunk_size: int
+    chunk_overlap: int
+    log_level: str
+    output_dir: Path
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "IngestionSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        raw_dirs = env.get("KNOWLEDGE_BASE_DIRS", DEFAULT_KNOWLEDGE_BASE_DIRS)
+        knowledge_base_dirs = tuple(_resolve(p) for p in _split_csv(raw_dirs))
+
+        raw_extensions = env.get("SUPPORTED_EXTENSIONS", DEFAULT_SUPPORTED_EXTENSIONS)
+        supported_extensions = tuple(
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in _split_csv(raw_extensions)
+        )
+
+        chunk_size = _parse_int(env, "CHUNK_SIZE", DEFAULT_CHUNK_SIZE)
+        chunk_overlap = _parse_int(env, "CHUNK_OVERLAP", DEFAULT_CHUNK_OVERLAP)
+
+        log_level = env.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).strip().upper()
+
+        output_dir = _resolve(env.get("INGESTION_OUTPUT_DIR", DEFAULT_OUTPUT_DIR))
+
+        settings = cls(
+            knowledge_base_dirs=knowledge_base_dirs,
+            supported_extensions=supported_extensions,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            log_level=log_level,
+            output_dir=output_dir,
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support ingestion."""
+        if not self.knowledge_base_dirs:
+            raise ConfigurationError(
+                "KNOWLEDGE_BASE_DIRS must list at least one directory to scan."
+            )
+
+        missing = [str(d) for d in self.knowledge_base_dirs if not d.exists()]
+        if missing:
+            raise ConfigurationError(
+                "Knowledge base directory(ies) not found: "
+                f"{', '.join(missing)}. Check KNOWLEDGE_BASE_DIRS."
+            )
+
+        not_dirs = [str(d) for d in self.knowledge_base_dirs if not d.is_dir()]
+        if not_dirs:
+            raise ConfigurationError(
+                "KNOWLEDGE_BASE_DIRS entries must be directories, got file(s): "
+                f"{', '.join(not_dirs)}."
+            )
+
+        if not self.supported_extensions:
+            raise ConfigurationError(
+                "SUPPORTED_EXTENSIONS must list at least one file extension."
+            )
+
+        if self.chunk_size <= 0:
+            raise ConfigurationError(
+                f"CHUNK_SIZE must be a positive integer, got {self.chunk_size}."
+            )
+
+        if self.chunk_overlap < 0:
+            raise ConfigurationError(
+                f"CHUNK_OVERLAP must be zero or positive, got {self.chunk_overlap}."
+            )
+
+        if self.chunk_overlap >= self.chunk_size:
+            raise ConfigurationError(
+                f"CHUNK_OVERLAP ({self.chunk_overlap}) must be smaller than "
+                f"CHUNK_SIZE ({self.chunk_size})."
+            )
+
+        if self.log_level not in VALID_LOG_LEVELS:
+            raise ConfigurationError(
+                f"LOG_LEVEL must be one of {sorted(VALID_LOG_LEVELS)}, got "
+                f"'{self.log_level}'."
+            )
+
+
+def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
+    raw = env.get(key)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{key} must be an integer, got '{raw}'.") from exc
