@@ -34,7 +34,7 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | Module | Purpose |
 |---|---|
 | `config/settings.py` | `RagSettings.from_env()` — same file, same pattern as Ingestion/RetrievalSettings |
-| `config/prompt_config.py` | `PROMPT_VERSION`, grounded-RAG `SYSTEM_PROMPT`, `build_prompt()` |
+| `config/prompt_config.py` | `PROMPT_VERSION`, `GROUNDING_GUARDRAILS`, grounded-RAG `SYSTEM_PROMPT`, `build_system_prompt()`, `build_prompt()` |
 | `models/citation.py` | `Citation` (pydantic) |
 | `models/response.py` | + `RagAnswer`, `RagDiagnostics` (alongside Milestone 2's models) |
 | `services/llm_service.py` | `LanguageModelProvider` protocol, structured errors, `FakeModelProvider` (default, offline) |
@@ -45,19 +45,33 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | `evaluation/rag_evaluator.py` | Seed-dataset evaluation runner, CLI: `python -m app.rag.evaluate` (via `app/rag/evaluate.py` alias) |
 | `rag/index.py`, `rag/evaluate.py` | Thin one-line aliases for `app.embeddings.indexer.main` / `app.evaluation.rag_evaluator.main` — real logic stays in its own layer; these just give all user-facing RAG commands one namespace (`app.rag.index` / `app.rag.ask` / `app.rag.evaluate`) |
 
+## Implemented (Milestone 4)
+
+| Module | Purpose |
+|---|---|
+| `agents/base_agent.py` | `Advisor` frozen dataclass — persona + structure + extra guidance + default filters, `ask()` delegates straight to `RagService.ask()` |
+| `agents/registry.py` | `ADVISOR_REGISTRY`, `get_advisor()`, `list_advisors()`, `UnknownAdvisorError` |
+| `agents/architecture_advisor.py`, `ai_engineering_advisor.py`, `devsecops_advisor.py`, `testing_advisor.py`, `platform_advisor.py`, `incident_advisor.py` | 6 advisors with a default `document_id` filter (each maps to one well-populated KB document) |
+| `agents/security_advisor.py`, `ai_transformation_advisor.py` | 2 advisors with **no** default filter (cross-cutting topics spread across multiple documents) |
+| `rag/ask.py` | + `--advisor <id>` / `--list-advisors` flags (same CLI, no new command) |
+
 See the [root README](../README.md) for how to run the pipeline, indexer,
-retriever, RAG assistant, evaluator, and tests.
+retriever, RAG assistant, advisors, evaluator, and tests.
 
 ## Placeholders (future milestones)
 
-Every other module here (`agents/`, `api/`, `auth/`, `cache/`,
-`telemetry/`, `frontend/`, `prompts/`, `ingestion/pdf_loader.py`,
+Every other module here (`api/`, `auth/`, `cache/`, `telemetry/`,
+`frontend/`, `prompts/`, `ingestion/pdf_loader.py`,
 `embeddings/emdedding_service.py`, `embeddings/reranker.py`,
 `rag/generator.py`, `rag/hybrid_search.py`,
 `services/document_service.py`, `services/embedding_service.py`,
 `services/logging_service.py`, `services/vector_service.py`,
 `evaluation/benchmark_runner.py`, `evaluation/llm_judge.py`,
-`evaluation/retrieval_metrics.py`, `evaluation/sample_questions.py`) is
-empty scaffolding, reserved for specialized advisors and a richer
-evaluation/observability layer built on top of `RagService`/`RagAnswer`
-— do not assume any behavior from them.
+`evaluation/retrieval_metrics.py`, `evaluation/sample_questions.py`,
+`agents/business_advisor.py`, `agents/engineering_advisor.py`,
+`agents/orcherstrator.py`) is empty scaffolding — the last three
+deliberately: `business_advisor.py` isn't one of the 8 requested
+advisors, `engineering_advisor.py` was superseded by the more specific
+`ai_engineering_advisor.py`, and `orcherstrator.py` is reserved for a
+future milestone that adds advisor routing/orchestration (explicitly out
+of scope for Milestone 4). Do not assume any behavior from any of these.

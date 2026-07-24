@@ -17,7 +17,8 @@ observability. It is being built incrementally, milestone by milestone.
 | **1** | Knowledge ingestion foundation | ✅ Complete |
 | **2** | Semantic indexing & retrieval | ✅ Complete |
 | **3** | Grounded RAG assistant (CLI) | ✅ Complete |
-| 4+ | Specialized advisors, evaluation harness, UI/API | Not started |
+| **4** | Pluggable advisor framework (8 domain advisors) | ✅ Complete |
+| 5+ | Advisor routing, multi-agent orchestration, UI/API | Not started |
 
 ## Milestone 1 — Knowledge Ingestion Foundation
 
@@ -79,7 +80,8 @@ extraction, chunking, the end-to-end ingestion pipeline (Milestone 1),
 plus the embedding provider, vector store, incremental indexer, and
 retriever (Milestone 2). All Milestone 2 tests use the local embedding
 provider — no network calls, no API key required. (58 further Milestone 3
-tests are described below — 127 total.)
+tests and 53 further Milestone 4 advisor tests are described below —
+182 total.)
 
 ### Configuration
 
@@ -304,8 +306,9 @@ total duration. Not shown by default to keep normal output readable.
 python -m pytest
 ```
 
-127 tests total (69 from Milestones 1–2 unchanged + 58 new). All
-Milestone 3 tests use `FakeModelProvider`; `OpenAIModelProvider` is
+182 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
+Milestone 4, all unchanged/additive). All Milestone 3 tests use
+`FakeModelProvider`; `OpenAIModelProvider` is
 tested by injecting a fake `openai` module into `sys.modules`, exercising
 the real request-building/retry/error-translation logic with zero
 network calls and no installed SDK required.
@@ -425,20 +428,122 @@ based solely on the Northstar knowledge base; general industry guidance was not 
 
 ### Next milestone
 
-Specialized advisors (Architecture, AI Engineering, DevSecOps, Testing,
-Release, Incident, Platform Engineering, Developer Experience, Executive
-AI Transformation) are **not yet implemented** — `RagService` /
-`RagAnswer` are designed to be reused by them rather than rebuilt. Likely
-Milestone 4 scope: advisor routing/specialization, an evaluation harness
-with richer scoring, and — only if it fits naturally — a thin API layer
-in front of the existing `RagService`.
+See Milestone 4 below — it delivers the specialized advisors this
+section originally flagged as future work.
+
+## Milestone 4 — Pluggable Advisor Framework
+
+Eight domain advisors, each a **thin, declarative specialization** over
+the exact same `RagService` from Milestone 3 — a persona, optional
+default retrieval filters, and a response structure/extra guidance
+layered on top of the same shared grounding guardrails every advisor
+gets for free. **No changes to ingestion, indexing, retrieval, citation
+parsing, or evaluation** — verified by keeping the entire Milestone 1–3
+test suite green and the plain (no-advisor) CLI path byte-identical to
+Milestone 3's output. No advisor routing, multi-agent orchestration, UI,
+or workflow automation — advisor selection is manual, via `--advisor`.
+
+| Advisor | id | Default filter | Why |
+|---|---|---|---|
+| Architecture | `architecture` | `NLC-ENG-002` | Single well-populated source doc |
+| AI Engineering | `ai-engineering` | `NLC-ENG-003` | Single well-populated source doc |
+| DevSecOps | `devsecops` | `NLC-ENG-004` | Single well-populated source doc |
+| Testing | `testing` | `NLC-ENG-005` | Single well-populated source doc |
+| Platform Engineering | `platform-engineering` | `NLC-ENG-008` | Single well-populated source doc |
+| Incident Management | `incident-management` | `NLC-ENG-007` | Single well-populated source doc |
+| Security | `security` | *(none)* | Cross-cutting: spans DevSecOps + AI Engineering's AI Security section; `Security_Architecture.md` is an empty placeholder |
+| Executive AI Transformation | `executive-ai-transformation` | *(none)* | Cross-cutting: "AI Transformation Perspective" content is repeated across many documents |
+
+### How it works
+
+```
+Advisor (persona, structure, extra guidance, default filters)
+        │
+        ▼
+build_system_prompt(persona, GROUNDING_GUARDRAILS, extra_guidance, structure)
+        │  (app/config/prompt_config.py — same shared guardrails for every advisor)
+        ▼
+Advisor.ask(service, question, filters=...)
+        │  merges default_filters with any caller-supplied filters (caller wins)
+        ▼
+RagService.ask(question, filters=merged, system_prompt=..., prompt_version=...)
+        │  (app/rag/pipeline.py — UNCHANGED Milestone 3 orchestration)
+        ▼
+RagAnswer (diagnostics.prompt_version = "rag-system-v1+<advisor-id>-v1")
+```
+
+The only edits to Milestone 1–3 files are two purely-additive, optional
+kwargs: `build_prompt(..., system_prompt=None, prompt_version=None)` and
+`RagService.ask(..., system_prompt=None, prompt_version=None)` — every
+existing call site omits both, so nothing about retrieval, context
+construction, generation, or citation parsing changed.
+
+### CLI
+
+```bash
+python -m app.rag.ask --list-advisors
+python -m app.rag.ask "What testing evidence is required before release?" --advisor testing --show-diagnostics
+python -m app.rag.ask "What AI security controls does Northstar require?" --advisor security
+```
+
+### Sample output (`--advisor testing`)
+
+```
+Advisor: Testing Advisor
+
+Question:
+What testing evidence is required before release?
+
+Answer:
+This is a deterministic fake response for local testing. [S1] [S2]
+
+Sources:
+1. Northstar Lending Corporation - Testing Strategy — 35. Compliance Testing
+   File: 04_Engineering/14_Testing_Strategy.md
+   Score: 0.27
+2. Northstar Lending Corporation - Testing Strategy — 3. Vision
+   File: 04_Engineering/14_Testing_Strategy.md
+   Score: 0.27
+```
+
+Confirmed: retrieval is scoped to `14_Testing_Strategy.md` only, and
+`--show-diagnostics` shows `prompt_version: rag-system-v1+testing-v1`.
+The unfiltered Security advisor, asked "What AI security controls does
+Northstar require?", correctly pulled from **both**
+`12_AI_Engineering_Standards.md` (§24 AI Security Standards) and
+`13_DevSecOps_Standards.md` — exactly the cross-document behavior its
+lack of a default filter is meant to enable.
+
+### Adding a 9th advisor
+
+1. Create `app/agents/<name>_advisor.py` exporting `ADVISOR = Advisor(...)`.
+2. Add one line to `app/agents/registry.py`.
+3. No other file changes required — the CLI and `--list-advisors` pick
+   it up automatically.
+
+### Tests
+
+`tests/test_advisors.py` (prompt composition, registry, per-advisor
+structural checks, filter-merging in isolation) and
+`tests/test_advisor_integration.py` (end-to-end with `FakeModelProvider`:
+a filtered advisor only retrieves its own document, an unfiltered one
+retrieves across documents, a filtered advisor with no matching document
+correctly reports insufficient context rather than fabricating, and the
+plain no-advisor path is unaffected). 182 tests total.
+
+### Next milestone
+
+Advisor routing (automatically picking an advisor for a question),
+multi-agent orchestration, an evaluation harness that scores advisor
+answers specifically, and — only if it fits naturally — a thin API
+layer are still not implemented.
 
 ## Project layout
 
 ```
 app/
   config/       settings.py (Ingestion/Retrieval/RagSettings), logging.py,
-                prompt_config.py                                 — M1 + M2 + M3
+                prompt_config.py                                 — M1 + M2 + M3 (+ M4: build_system_prompt)
   models/       document.py, chunk.py, query.py,
                 response.py (+ RagAnswer/RagDiagnostics),
                 citation.py                                      — M1 + M2 + M3 (pydantic)
@@ -460,7 +565,14 @@ app/
   evaluation/   rag_evaluator.py                                  — Milestone 3
                 (benchmark_runner.py, llm_judge.py, retrieval_metrics.py,
                 sample_questions.py are future-milestone placeholders)
-  agents/, api/, telemetry/, ...                                  — placeholders for later milestones
+  agents/       base_agent.py (Advisor), registry.py,
+                architecture_advisor.py, ai_engineering_advisor.py,
+                devsecops_advisor.py, testing_advisor.py,
+                security_advisor.py, platform_advisor.py,
+                incident_advisor.py, ai_transformation_advisor.py  — Milestone 4
+                (business_advisor.py, engineering_advisor.py, orcherstrator.py
+                stay empty: not one of the 8 advisors / routing is out of scope)
+  api/, telemetry/, ...                                            — placeholders for later milestones
 enterprise_knowledge_base/   Northstar's Markdown knowledge base (source data)
 data/processed/               generated ingestion artifacts (git-ignored)
 data/evaluation_sets/         Milestone 3 seed evaluation dataset
@@ -468,5 +580,5 @@ vector_store/                  generated embeddings + index (git-ignored)
 tests/                         pytest suite
 ```
 
-Everything not listed above as M1/M2/M3 is intentionally still an empty
-placeholder — scaffolding for milestones that haven't been built yet.
+Everything not listed above as M1/M2/M3/M4 is intentionally still an
+empty placeholder — scaffolding for milestones that haven't been built yet.

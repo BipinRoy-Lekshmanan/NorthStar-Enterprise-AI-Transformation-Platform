@@ -40,22 +40,46 @@ Delivered in `app/services/llm_service.py` (+ `openai_llm_provider.py`),
 `app/rag/citation_engine.py`, `app/rag/pipeline.py`, `app/rag/ask.py`
 (CLI), `app/evaluation/rag_evaluator.py`, plus `RagSettings` in
 `app/config/settings.py` and `Citation`/`RagAnswer`/`RagDiagnostics` in
-`app/models/`. See root `README.md` for details and `tests/` (127 tests
-total) for coverage. Verified against the real knowledge base: the CLI
-runs end-to-end with both the default `fake` provider and (when
-configured) real OpenAI generation; 12/14 seed evaluation cases'
-retrieval checks passed. **Known limitation**: the default `local`
-embedding provider's insufficient-context detection is unreliable
-(lexical similarity, not semantic — see `.ai-context/decisions.md`),
-expected to resolve with `EMBEDDING_PROVIDER=openai`.
+`app/models/`. See root `README.md` for details. Verified against the
+real knowledge base: the CLI runs end-to-end with both the default
+`fake` provider and (when configured) real OpenAI generation; 12/14 seed
+evaluation cases' retrieval checks passed. **Known limitation**: the
+default `local` embedding provider's insufficient-context detection is
+unreliable (lexical similarity, not semantic — see
+`.ai-context/decisions.md`), expected to resolve with
+`EMBEDDING_PROVIDER=openai`.
 
-## Milestone 4+ — not started
+## Milestone 4 — Pluggable Advisor Framework ✅ Complete
 
-Specialized advisors (Architecture, AI Engineering, DevSecOps, Testing,
-Release, Incident, Platform Engineering, Developer Experience, Executive
-AI Transformation), a richer evaluation/observability harness, and
-possibly a thin API layer are still empty scaffolding under `app/`
-(agents/, api/, telemetry/, and everything in `rag/`/`services/`/
-`evaluation/` not listed above as M3). Build on top of Milestone 3's
-`RagService`/`RagAnswer` rather than re-implementing retrieval, context
-construction, prompting, or citation parsing.
+8 domain advisors (Architecture, AI Engineering, DevSecOps, Testing,
+Security, Platform Engineering, Incident Management, Executive AI
+Transformation) as thin, declarative specializations over the unchanged
+Milestone 3 `RagService` — persona + optional default retrieval filter +
+response structure + extra guidance, composed on top of shared grounding
+guardrails every advisor gets automatically. No advisor routing,
+multi-agent orchestration, UI, or workflow automation.
+
+Delivered in `app/agents/base_agent.py` (`Advisor`), `registry.py`, and
+8 advisor definition modules, plus two purely-additive optional kwargs
+on `app.config.prompt_config.build_prompt()` and
+`RagService.ask()` (`system_prompt`, `prompt_version`) — every existing
+call site omits both, so Milestone 1-3 behavior is provably unchanged
+(same test suite, same byte-identical generic `SYSTEM_PROMPT`). CLI
+extended with `--advisor <id>` / `--list-advisors` on the existing
+`app.rag.ask`. See root `README.md` for the full advisor table and
+sample output. Verified against the real knowledge base: filtered
+advisors (e.g. Testing) correctly scope retrieval to their document;
+unfiltered advisors (Security, Executive AI Transformation) correctly
+retrieve across multiple documents; the plain no-advisor CLI path is
+byte-identical to Milestone 3. 182 tests total (129 unchanged + 53 new).
+
+## Milestone 5+ — not started
+
+Advisor routing (automatically selecting an advisor for a question),
+multi-agent orchestration, a richer evaluation/observability harness
+that scores advisor-specific answers, and possibly a thin API layer are
+still empty scaffolding under `app/` (`agents/orcherstrator.py`, `api/`,
+`telemetry/`, and everything in `rag/`/`services/`/`evaluation/` not
+listed above). Build on top of Milestone 4's `Advisor`/`ADVISOR_REGISTRY`
+rather than re-implementing retrieval, context construction, prompting,
+or citation parsing.

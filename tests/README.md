@@ -1,8 +1,8 @@
 # tests/
 
 Pytest suite for the ingestion pipeline (Milestone 1), the semantic
-indexing/retrieval layer (Milestone 2), and the grounded RAG assistant
-(Milestone 3).
+indexing/retrieval layer (Milestone 2), the grounded RAG assistant
+(Milestone 3), and the pluggable advisor framework (Milestone 4).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -28,8 +28,11 @@ python -m pytest
 | `test_citation_engine.py` | Valid/duplicate/invalid citation parsing, citations built only for ids actually cited |
 | `test_rag_pipeline.py` | Full workflow: sufficient/insufficient context, provider failure, empty/long question, no retrieval results, diagnostics, filters |
 | `test_guardrails.py` | Prompt-injection fixture (injected text stays in the user prompt, pipeline doesn't special-case it), secrets and full context text never logged at INFO, model output size bounded |
+| `test_cli_aliases.py` | `app.rag.index`/`app.rag.evaluate` point at the real `app.embeddings.indexer`/`app.evaluation.rag_evaluator` implementations |
+| `test_advisors.py` | Shared-guardrail prompt composition, registry (8 expected ids, unknown-id error), per-advisor structural checks (persona/structure/filters), `Advisor.ask()` filter-merging in isolation |
+| `test_advisor_integration.py` | End-to-end with `FakeModelProvider`: a filtered advisor only retrieves its own document, an unfiltered advisor retrieves across documents, a filtered advisor with no matching document reports insufficient context rather than fabricating, `RagDiagnostics.prompt_version` carries the advisor tag, the plain no-advisor path is unaffected |
 
-All Milestone 2 and 3 tests use `LocalHashingEmbeddingProvider` and
+All Milestone 2-4 tests use `LocalHashingEmbeddingProvider` and
 `FakeModelProvider` — no network calls, no API key required, same
 offline-test philosophy as Milestone 1. `test_openai_llm_provider.py` is
 the one exception that touches provider-specific code, and it does so

@@ -110,3 +110,67 @@
 - **Fixed a pre-existing bug**: `app/services/_init_.py` (typo) →
   `__init__.py`, same pattern as Milestones 1–2, now that
   `app/services/llm_service.py` is used.
+
+## Milestone 4 — Pluggable Advisor Framework
+
+- **Advisors are declarative data, not subclasses.** `Advisor` is a
+  single frozen dataclass (persona, structure, extra guidance, default
+  filters); each of the 8 advisor modules just instantiates it. No class
+  hierarchy, no per-advisor `ask()` override — `Advisor.ask()` is the
+  only behavior, shared by all 8, and it does nothing but compose a
+  system prompt and call `RagService.ask()`. This was the most literal
+  reading of "thin specialization": if an advisor ever needs real
+  behavior beyond prompt/filter composition, that's a sign it belongs in
+  `RagService` itself (shared), not duplicated per advisor.
+- **Two purely-additive extension points, not changes, to Milestone 1-3
+  files**: `build_prompt()` and `RagService.ask()` each gained two
+  optional kwargs (`system_prompt`, `prompt_version`) defaulting to
+  today's behavior when omitted. Verified by re-running the entire
+  Milestone 1-3 test suite unmodified (still green) and confirming
+  `SYSTEM_PROMPT` is byte-identical after extracting
+  `GROUNDING_GUARDRAILS` out of it (`test_generic_system_prompt_is_unchanged_by_the_advisor_refactor`).
+- **6 of 8 advisors get a default `document_id` retrieval filter; 2
+  deliberately don't.** Verified via `grep document_id` across
+  `enterprise_knowledge_base/04_Engineering/`: Architecture (`NLC-ENG-002`),
+  AI Engineering (`-003`), DevSecOps (`-004`), Testing (`-005`), Incident
+  Management (`-007`), and Platform Engineering (`-008`) each map to
+  exactly one well-populated source document, so a hard filter is a safe
+  precision win. Security and Executive AI Transformation get **no**
+  default filter: `enterprise_knowledge_base/03_Architecture/Security_Architecture.md`
+  is an empty placeholder, and Northstar's real security guidance lives
+  in DevSecOps Standards' + AI Engineering Standards' "AI Security
+  Standards" section; similarly "AI Transformation Perspective" content
+  is repeated across many documents, not concentrated in one. Confirmed
+  live: asking the Security advisor about AI security controls correctly
+  pulled from *both* `12_AI_Engineering_Standards.md` and
+  `13_DevSecOps_Standards.md` in the same answer.
+- **Caller-supplied filters always override an advisor's default on the
+  same key** (`{**default_filters, **caller_filters}`) — an explicit CLI
+  `--document-id` always wins over the advisor's soft default, never the
+  reverse.
+- **A filtered advisor whose document isn't present in the index reports
+  insufficient context, not a crash or a cross-document answer** —
+  discovered organically while writing the integration test fixture (a
+  2-document KB with no `NLC-ENG-002` content made the Architecture
+  advisor correctly report insufficient context) and kept as an explicit
+  regression test rather than special-cased away.
+- **No dynamic plugin discovery for the registry** — `app/agents/registry.py`
+  is a hand-written static tuple. Adding a 9th advisor is "write one file
+  + add one registry line," fully auditable, no import-scanning magic.
+- **Advisor selection is manual only** (`--advisor <id>` on the existing
+  `app.rag.ask` CLI) — no routing/classification logic decides which
+  advisor answers a question. Explicitly out of scope per the milestone
+  spec; `app/agents/orcherstrator.py` stays an empty placeholder for
+  that future milestone.
+- **Reused existing `app/agents/*_advisor.py` stub filenames where they
+  matched** (architecture, ai_transformation → renamed conceptually to
+  "Executive AI Transformation", platform, security) and created new
+  files only where no stub fit (`ai_engineering_advisor.py`,
+  `devsecops_advisor.py`, `testing_advisor.py`, `incident_advisor.py`,
+  `registry.py`). `business_advisor.py` and the generic
+  `engineering_advisor.py` stay empty — not among the 8 requested
+  advisors.
+- **Fixed a pre-existing bug**: `app/agents/_init_.py` (typo) →
+  `__init__.py`, same pattern as Milestones 1–3, now that
+  `app/agents/base_agent.py` is used. Left `orcherstrator.py`'s own
+  filename typo alone — it's still unimplemented and out of scope.
