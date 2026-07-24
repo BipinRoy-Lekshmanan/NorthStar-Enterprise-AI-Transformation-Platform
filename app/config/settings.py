@@ -52,6 +52,9 @@ DEFAULT_ROUTER_MAX_SUPPORTING_ADVISORS = 2
 DEFAULT_ROUTER_RETRIEVAL_WEIGHT = 0.6
 DEFAULT_ROUTER_KEYWORD_WEIGHT = 0.4
 
+DEFAULT_WORKFLOW_STORE_DIR = "workflow_store"
+DEFAULT_WORKFLOW_MAX_STAGES = 20
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -412,6 +415,33 @@ class RouterSettings:
         if self.router_retrieval_weight == 0 and self.router_keyword_weight == 0:
             raise ConfigurationError(
                 "ROUTER_RETRIEVAL_WEIGHT and ROUTER_KEYWORD_WEIGHT cannot both be zero."
+            )
+
+
+@dataclass(frozen=True)
+class WorkflowSettings:
+    """Validated configuration for workflow execution and persistence (Milestone 6)."""
+
+    workflow_store_dir: Path
+    workflow_max_stages: int
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "WorkflowSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        settings = cls(
+            workflow_store_dir=_resolve(env.get("WORKFLOW_STORE_DIR", DEFAULT_WORKFLOW_STORE_DIR)),
+            workflow_max_stages=_parse_int(env, "WORKFLOW_MAX_STAGES", DEFAULT_WORKFLOW_MAX_STAGES),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support workflow execution."""
+        if self.workflow_max_stages <= 0:
+            raise ConfigurationError(
+                f"WORKFLOW_MAX_STAGES must be a positive integer, got {self.workflow_max_stages}."
             )
 
 
