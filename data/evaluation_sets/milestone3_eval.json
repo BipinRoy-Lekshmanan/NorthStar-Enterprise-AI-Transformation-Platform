@@ -1,0 +1,114 @@
+[
+  {
+    "id": "incident-001",
+    "question": "How should a Sev-1 incident be handled?",
+    "expected_documents": ["16_Incident_Management.md"],
+    "must_include_concepts": ["incident commander", "war room"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "incident-002",
+    "question": "What activities are part of a Post-Incident Review?",
+    "expected_documents": ["16_Incident_Management.md"],
+    "must_include_concepts": ["root cause", "blameless"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "release-001",
+    "question": "What evidence is required before a production release?",
+    "expected_documents": ["15_Release_Management.md"],
+    "must_include_concepts": ["testing", "approval"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "release-002",
+    "question": "What should happen after a failed canary deployment?",
+    "expected_documents": ["15_Release_Management.md"],
+    "must_include_concepts": ["rollback"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "testing-001",
+    "question": "What does Northstar's testing strategy require before deployment?",
+    "expected_documents": ["14_Testing_Strategy.md"],
+    "must_include_concepts": ["test"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "ai-engineering-001",
+    "question": "What controls are required before deploying AI-generated code?",
+    "expected_documents": ["12_AI_Engineering_Standards.md"],
+    "must_include_concepts": ["human review"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "ai-engineering-002",
+    "question": "What does Northstar require for human review of AI output?",
+    "expected_documents": ["12_AI_Engineering_Standards.md"],
+    "must_include_concepts": ["human", "review"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "ai-engineering-003",
+    "question": "How should Northstar measure AI-enabled engineering productivity?",
+    "expected_documents": ["12_AI_Engineering_Standards.md"],
+    "must_include_concepts": ["productivity"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "devsecops-001",
+    "question": "What security scanning is required in the CI/CD pipeline?",
+    "expected_documents": ["13_DevSecOps_Standards.md"],
+    "must_include_concepts": ["scanning"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "platform-engineering-001",
+    "question": "What responsibilities belong to Platform Engineering?",
+    "expected_documents": ["17_Platform_Engineering.md"],
+    "must_include_concepts": ["platform"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "developer-experience-001",
+    "question": "How does Northstar support developer experience?",
+    "expected_documents": ["18_Developer_Experience.md"],
+    "must_include_concepts": ["developer"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "architecture-001",
+    "question": "How should an architecture decision be documented?",
+    "expected_documents": ["11_Architecture_Principles.md"],
+    "must_include_concepts": ["architecture"],
+    "requires_citation": true,
+    "expected_sufficient_context": true
+  },
+  {
+    "id": "insufficient-001",
+    "question": "What is Northstar's current stock price?",
+    "expected_documents": [],
+    "must_include_concepts": [],
+    "requires_citation": false,
+    "expected_sufficient_context": false
+  },
+  {
+    "id": "insufficient-002",
+    "question": "Who is the CEO of Northstar in real life?",
+    "expected_documents": [],
+    "must_include_concepts": [],
+    "requires_citation": false,
+    "expected_sufficient_context": false
+  }
+]
