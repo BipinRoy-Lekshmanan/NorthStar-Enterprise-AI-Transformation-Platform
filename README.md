@@ -19,7 +19,8 @@ observability. It is being built incrementally, milestone by milestone.
 | **3** | Grounded RAG assistant (CLI) | ✅ Complete |
 | **4** | Pluggable advisor framework (10 domain advisors) | ✅ Complete |
 | **5** | Advisor router & controlled multi-advisor synthesis | ✅ Complete |
-| 6+ | Multi-agent orchestration beyond bounded synthesis, evaluation of advisor answers, UI/API | Not started |
+| **6** | Enterprise workflow orchestration (5 review workflows) | ✅ Complete |
+| 7+ | UI/API, evaluation of advisor/workflow answer quality beyond deterministic checks | Not started |
 
 ## Milestone 1 — Knowledge Ingestion Foundation
 
@@ -81,8 +82,9 @@ extraction, chunking, the end-to-end ingestion pipeline (Milestone 1),
 plus the embedding provider, vector store, incremental indexer, and
 retriever (Milestone 2). All Milestone 2 tests use the local embedding
 provider — no network calls, no API key required. (58 further Milestone 3
-tests, 53 further Milestone 4 advisor tests, and 32 further Milestone 5
-router/orchestrator tests are described below — 214 total.)
+tests, 53 further Milestone 4 advisor tests, 32 further Milestone 5
+router/orchestrator tests, and 103 further Milestone 6 workflow tests
+are described below — 317 total.)
 
 ### Configuration
 
@@ -307,10 +309,11 @@ total duration. Not shown by default to keep normal output readable.
 python -m pytest
 ```
 
-214 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
-Milestone 4 + 32 from Milestone 5, all unchanged/additive). All
-Milestone 3 tests use `FakeModelProvider`; `OpenAIModelProvider` is
-tested by injecting a fake `openai` module into `sys.modules`, exercising
+317 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
+Milestone 4 + 32 from Milestone 5 + 103 from Milestone 6, all
+unchanged/additive). All Milestone 3 tests use `FakeModelProvider`;
+`OpenAIModelProvider` is tested by injecting a fake `openai` module into
+`sys.modules`, exercising
 the real request-building/retry/error-translation logic with zero
 network calls and no installed SDK required.
 
@@ -743,9 +746,285 @@ Milestone 5).
 
 ### Next milestone
 
-Evaluating advisor/synthesis answer quality specifically (extending
-Milestone 3's evaluation harness), and — only if it fits naturally — a
-thin API layer, are still not implemented.
+See Milestone 6 below — it builds a workflow layer on top of the router
+and orchestrator built here, for predefined enterprise review processes.
+
+## Milestone 6 — Enterprise Workflow Orchestration
+
+Five predefined, bounded, human-checkpointed enterprise review
+processes — Architecture Review, AI Solution Review, Production
+Readiness Review, Incident Review, and Executive AI Transformation
+Assessment — built entirely on top of the unchanged Milestone 1–5
+stack. **This is controlled orchestration, not autonomous agency**:
+every workflow's stage sequence, advisor selection, and report
+structure is fixed configuration (`WorkflowDefinition`), never something
+a workflow — or a model — decides at runtime. No recursive planning, no
+dynamic stage creation, no unrestricted tool use, no production actions
+(deployment, code changes, ticket/email creation) are ever triggered.
+
+**No changes to ingestion, indexing, retrieval, citation parsing,
+evaluation, routing, or any of the 10 advisors' behavior** — the only
+edits to existing files are `RagService`/`Advisor` reuse exactly as
+Milestone 5 left them, plus one purely-additive new function in
+`app/config/prompt_config.py`.
+
+```
+Structured JSON input
+   │
+   ▼
+WorkflowDefinition (static config, validated once at import time)
+   │  Kahn's-algorithm cycle check -> precomputed execution_order
+   ▼
+WorkflowEngine.run() / .resume() / .approve() / .cancel()
+   │  walks execution_order, dispatches each stage by its closed
+   │  stage_type, persists after every single stage:
+   │
+   │  validate_input        -> schema validation + EvidenceGap detection
+   │  advisor_review         -> existing Advisor.ask() (Milestone 4, unchanged)
+   │  conflict_review          -> rule-based stance detection (new, no LLM)
+   │  human_approval             -> pause (config-driven condition) or skip
+   │  executive_synthesis          -> ONE bounded LLM call over stage results
+   │  final_report                   -> deterministic report assembly
+   ▼
+WorkflowExecution (persisted as workflow_store/<execution_id>.json
+                    after every stage -- safely resumable from any point,
+                    including a process crash mid-run)
+```
+
+### Advisors vs. workflows
+
+An **advisor** (Milestone 4) answers one question from one domain
+perspective. The **router + orchestrator** (Milestone 5) pick advisors
+*automatically* for an arbitrary question and synthesize their answers.
+A **workflow** (Milestone 6) is the opposite of automatic: it is a
+named, versioned, pre-agreed sequence of specific advisors for a
+specific structured business process (e.g. "these exact 5 advisors
+review a release, in this exact order, and a human must approve if
+anything blocking is found"). Nothing about *which* advisor runs, or
+*when*, is decided at runtime — that's the whole point.
+
+### Workflows
+
+| Workflow | id | Pauses for approval | Bounded recommendation |
+|---|---|---|---|
+| Architecture Review | `architecture_review` | Always, before synthesis | — |
+| AI Solution Review | `ai_solution_review` | Only if a blocking risk is found | — |
+| Production Readiness Review | `production_readiness_review` | Only if a blocking risk is found | `GO` / `GO_WITH_CONDITIONS` / `NO_GO` / `INSUFFICIENT_EVIDENCE` |
+| Incident Review | `incident_review` | Always, before corrective actions | — |
+| Executive AI Transformation Assessment | `executive_ai_transformation_assessment` | Always, before the roadmap | — |
+
+Each workflow's full stage list, input schema, and report sections are
+defined in `app/workflows/catalog/*.py` — one small declarative file per
+workflow. Adding a 6th workflow (e.g. Release Risk Review) is "write one
+more file + one registry line," the same "static registry, no plugin
+discovery" pattern `app/agents/registry.py` already established.
+
+### How routing differs from workflow stage selection
+
+Milestone 5's router picks advisors *for an arbitrary question* using
+two deterministic signals. Workflows don't use the router at all —
+`WorkflowStageDefinition.advisor_name` names the exact advisor for each
+stage, fixed at definition time. The one piece of "conditional" logic a
+workflow has is deliberately narrow and declarative, never a general
+rule engine:
+
+- `approval_condition` (`"always"` or `"on_blocking_finding"`) — whether
+  a `human_approval` stage actually pauses.
+- `skip_unless_input_truthy` — whether a stage runs at all, based on one
+  named input field (e.g. Incident Review's Security Advisor Review only
+  runs when `security_related` is truthy).
+
+### Conflict detection (new, rule-based, no LLM)
+
+`app/workflows/conflict_detection.py` — for every topic (rollback,
+security review, scalability, ...) that two advisors both mention,
+classifies each advisor's stance via a small fixed phrase lexicon
+(`POSITIVE_MARKERS` vs. `BLOCKING_MARKERS`) in a bounded window around
+the mention. A positive-vs-blocking split on the same topic becomes a
+high-severity, blocking `ReviewFinding` that quotes the exact matched
+phrases — fully explainable and unit-testable with literal strings,
+consistent with Milestone 5's "deterministic, explainable, testable"
+router. Deliberately coarse: false negatives (a real disagreement
+phrased outside the lexicon) are expected, not a bug.
+
+### Evidence gaps
+
+`app/workflows/input_validation.py` — each workflow's `input_schema`
+marks certain optional fields as evidence: if missing, they become an
+`EvidenceGap` (not a validation error) with a severity and a `blocking`
+flag. Production Readiness Review's missing `rollback_plan` is
+`blocking=True`, which is what drives its `INSUFFICIENT_EVIDENCE`
+recommendation — **missing evidence forces the bounded recommendation
+down, it can never be talked around by polished synthesis prose.**
+
+### Findings, citations, and the synthesis stage
+
+`ReviewFinding`/`EvidenceGap`/`ApprovalDecision`/`WorkflowStageResult`/
+`WorkflowExecution` (`app/models/workflow.py`) are pydantic — same
+reasoning `Citation`/`RagAnswer` are pydantic while `RoutingDecision` is
+a plain dataclass: these are the objects that actually get persisted.
+The one bounded "Executive Synthesis" LLM call
+(`app/workflows/synthesis.py` + a new `build_workflow_synthesis_prompt()`
+in `app/config/prompt_config.py`, reusing the same shared
+`GROUNDING_GUARDRAILS` every advisor gets) operates strictly on
+already-completed stage results, findings, evidence gaps, conflicts, and
+human approval comments — never on raw knowledge-base text. Citations in
+the final report are a `chunk_id`-deduped union of every advisor stage's
+own `Citation` objects, never re-derived from synthesis text.
+
+### Persistence and resume
+
+`app/workflows/store.py::WorkflowStore` — one JSON file per execution,
+`workflow_store/<execution_id>.json` (mirrors `vector_store/`'s existing
+"plain files, no external DB" pattern), written after **every single
+stage** (not batched), so an execution can be inspected or resumed from
+any point — including after a process crash — in a completely separate
+CLI invocation. An `awaiting_approval` execution must go through
+`approve()` before it can continue; `resume()` alone is rejected for it,
+and `resume()`/`approve()` are both rejected once an execution reaches a
+terminal status (`completed`, `failed`, `cancelled`,
+`changes_requested`).
+
+### CLI
+
+```bash
+python -m app.workflows list
+python -m app.workflows describe production_readiness_review
+python -m app.workflows run production_readiness_review --input examples/workflows/production_readiness_missing_rollback.json --show-findings --show-diagnostics
+python -m app.workflows approve <execution-id> --decision approve --comments "Proceed with conditions"
+python -m app.workflows resume <execution-id>
+python -m app.workflows cancel <execution-id>
+```
+
+Structured input always comes from a JSON file (`--input`), never pasted
+inline. Flags: `--show-stages`, `--show-findings`, `--show-conflicts`,
+`--show-citations`, `--show-diagnostics`, `--output-format text|json`,
+`--output-file`.
+
+### Sample output — Production Readiness Review, missing rollback plan
+
+```
+Execution: 400cf0368d5a424690ecb6bd1c357024
+Workflow:  production_readiness_review (v1.0.0)
+Status:    awaiting_approval
+Stage:     blocking_risk_approval
+
+Awaiting human approval. Run: python -m app.workflows approve 400cf0368d5a424690ecb6bd1c357024 --decision approve|reject|request_changes|cancel [--comments "..."]
+
+Evidence gaps:
+  [MEDIUM] performance_evidence: No performance test evidence provided.
+  [CRITICAL [BLOCKING]] rollback_plan: No rollback plan provided.
+  [MEDIUM] monitoring_plan: No monitoring plan provided.
+  [MEDIUM] support_readiness: No support readiness confirmation provided.
+```
+
+```bash
+python -m app.workflows approve 400cf0368d5a424690ecb6bd1c357024 \
+  --decision approve --comments "Proceed with conditions; rollback gap noted for follow-up."
+```
+
+```
+Status:    completed
+Stage:     release_recommendation
+
+## Recommendation
+INSUFFICIENT_EVIDENCE
+```
+
+The blocking evidence gap paused the workflow for a human decision, was
+carried through the approval comment, and still correctly forced
+`INSUFFICIENT_EVIDENCE` — a human approving "proceed anyway" does not
+make the recommendation say `GO`.
+
+### Configuration additions
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WORKFLOW_STORE_DIR` | `workflow_store` | Where execution state (one JSON file per execution) is written |
+| `WORKFLOW_MAX_STAGES` | `20` | Hard cap on stages per workflow definition, rejected at registry-load time |
+
+### Tests
+
+103 new tests across 11 files: workflow definition validation (cycles,
+duplicate ids, unsupported stage types, missing `validate_input` stage,
+bounded stage count), input validation and evidence-gap detection,
+conflict detection (literal-string, deterministic), the synthesis stage
+(including a provider-failure fallback), store save/reload round-trips
+(including partial, mid-execution state), the engine's full pause/
+approve/reject/request-changes/cancel lifecycle and dependency/failure
+handling, `ReviewFinding` severity/status validation, the CLI's
+formatting helpers and `main()` end-to-end, one true end-to-end test per
+workflow (all 5), and the evaluation harness itself. 317 tests total
+(214 from Milestones 1–5 + 103 from Milestone 6).
+
+### Evaluation
+
+```bash
+python -m app.evaluation.workflow_evaluator
+```
+
+10 seed cases (`data/evaluation_sets/milestone6_workflow_eval.json`,
+input fixtures under `examples/workflows/`) checking completion,
+expected-stage execution, finding/evidence-gap detection, approval-
+checkpoint accuracy, bounded-recommendation accuracy, citation presence,
+and conflict detection — deterministic checks only, no LLM-as-judge,
+same philosophy as `app.evaluation.rag_evaluator`. Confirmed: 10/10
+passing.
+
+### Limitations
+
+- **Conflict detection cannot fire under the default offline
+  configuration.** It matches literal marker phrases in advisor *answer
+  text*, but `FakeModelProvider` always returns the same content-free
+  placeholder text — it never contains those phrases. Conflict detection
+  is fully exercised with literal strings in
+  `tests/test_workflow_conflict_detection.py` instead, and would work
+  end-to-end with `LLM_PROVIDER=openai`.
+- **`NO_GO`/`GO_WITH_CONDITIONS` are correspondingly unreachable in the
+  default evaluation dataset** for the same reason (they require a
+  conflict-detected finding) — the dataset only exercises `GO` and
+  `INSUFFICIENT_EVIDENCE` (evidence-gap-driven, independent of advisor
+  prose); the other two are covered directly in `tests/test_workflow_engine.py`.
+- **Narrative report sections depend on the synthesis model following
+  the requested section-header structure.** `app/workflows/report.py`
+  splits the synthesis answer by matching each declared section name as
+  a header line; if the model doesn't structure its answer that way (as
+  `FakeModelProvider` never does), the entire synthesis text is kept
+  under the first section rather than dropped — the "Sources" section is
+  the one exception, always computed deterministically from citations,
+  never from model text.
+- **"Timeline and Evidence Review" (Incident Review) and "Blocking-Risk
+  Approval Checkpoint" naming are folded into existing stage types**
+  (`validate_input`'s evidence-gap detection, `human_approval`'s
+  `on_blocking_finding` condition) rather than adding new stage types,
+  to keep the closed `stage_type` set at exactly six.
+- Same underlying `local` embedding provider limitation as Milestones
+  2–3/5: advisor retrieval quality (and therefore workflow finding
+  quality) is only as good as the lexical hashing embedding.
+
+### Security considerations
+
+- No shell execution, infrastructure changes, code modification, or
+  other production actions are triggered by any workflow — every stage
+  either calls the existing read-only `RagService`/`Advisor` machinery
+  or performs local, deterministic computation.
+- Human approval is a real checkpoint, not cosmetic: `approve()`/
+  `resume()` both reject an execution that isn't actually
+  `awaiting_approval`, and a rejected/cancelled execution can never be
+  resumed.
+- Structured input is always read from a file, never accepted as a raw
+  command-line string — avoids leaking sensitive fields into shell
+  history.
+- The same guardrails every advisor answer carries (no fabricated
+  compliance claims, human accountability preserved, untrusted document
+  text never treated as instructions) apply to the workflow synthesis
+  call too, via the same shared `GROUNDING_GUARDRAILS`.
+
+### Next milestone
+
+A thin API/UI layer, and evaluating advisor/workflow answer *quality*
+specifically (beyond the deterministic structural checks here), are
+still not implemented.
 
 ## Project layout
 
@@ -774,6 +1053,7 @@ app/
                 (document_service.py, embedding_service.py,
                 logging_service.py, vector_service.py are placeholders)
   evaluation/   rag_evaluator.py                                  — Milestone 3
+                workflow_evaluator.py                              — Milestone 6
                 (benchmark_runner.py, llm_judge.py, retrieval_metrics.py,
                 sample_questions.py are future-milestone placeholders)
   agents/       base_agent.py (Advisor), registry.py,
@@ -787,13 +1067,28 @@ app/
                 ConsolidatedAdvisorResponse)                       — Milestone 5
                 (business_advisor.py, engineering_advisor.py
                 stay empty: not one of the 10 advisors)
+  workflows/    definitions.py (WorkflowDefinition, WorkflowStageDefinition),
+                registry.py, engine.py (WorkflowEngine),
+                input_validation.py, conflict_detection.py,
+                synthesis.py, report.py, store.py (WorkflowStore),
+                cli.py, __main__.py,
+                catalog/ (5 workflow definitions:
+                architecture_review.py, ai_solution_review.py,
+                production_readiness_review.py, incident_review.py,
+                executive_ai_transformation_assessment.py)          — Milestone 6
+  models/       + workflow.py (ReviewFinding, EvidenceGap,
+                ApprovalDecision, WorkflowStageResult,
+                WorkflowExecution)                                  — Milestone 6 (pydantic)
   api/, telemetry/, ...                                            — placeholders for later milestones
 enterprise_knowledge_base/   Northstar's Markdown knowledge base (source data)
 data/processed/               generated ingestion artifacts (git-ignored)
-data/evaluation_sets/         Milestone 3 seed evaluation dataset
+data/evaluation_sets/         Milestone 3 + Milestone 6 seed evaluation datasets
+examples/workflows/           Milestone 6 example/fixture workflow input files
 vector_store/                  generated embeddings + index (git-ignored)
+workflow_store/                 generated workflow execution state (git-ignored)
 tests/                         pytest suite
 ```
 
-Everything not listed above as M1/M2/M3/M4/M5 is intentionally still an
-empty placeholder — scaffolding for milestones that haven't been built yet.
+Everything not listed above as M1/M2/M3/M4/M5/M6 is intentionally still
+an empty placeholder — scaffolding for milestones that haven't been
+built yet.

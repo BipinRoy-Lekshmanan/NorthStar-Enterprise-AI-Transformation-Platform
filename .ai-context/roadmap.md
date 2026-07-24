@@ -108,13 +108,46 @@ limitation — mitigated for the fallback case specifically by keeping the
 retrieval signal on its absolute similarity scale rather than
 normalizing it away (see `.ai-context/decisions.md`).
 
-## Milestone 6+ — not started
+## Milestone 6 — Enterprise Workflow Orchestration ✅ Complete
 
-Evaluating advisor/synthesis answer quality specifically (extending
-Milestone 3's evaluation harness beyond generic RAG answers), further
-multi-agent orchestration beyond bounded single-shot synthesis, and
-possibly a thin API layer are still empty scaffolding under `app/`
-(`api/`, `telemetry/`, and everything in `rag/`/`services/`/`evaluation/`
-not listed above). Build on top of Milestone 5's
-`AdvisorRouter`/`AdvisorOrchestrator` rather than re-implementing
-routing or synthesis bounding.
+5 predefined, bounded, human-checkpointed enterprise review workflows
+(Architecture Review, AI Solution Review, Production Readiness Review,
+Incident Review, Executive AI Transformation Assessment), each a fixed
+sequence of specific existing advisors (Milestone 4) plus new rule-based
+conflict detection, evidence-gap surfacing, and one bounded synthesis
+call per workflow. Controlled orchestration, not autonomous agency: no
+recursive planning, no dynamic stage creation, no production actions.
+
+Delivered in a new `app/workflows/` package (`definitions.py`,
+`registry.py`, `engine.py`, `input_validation.py`,
+`conflict_detection.py`, `synthesis.py`, `report.py`, `store.py`,
+`cli.py`, `catalog/` with the 5 definitions), `app/models/workflow.py`
+(pydantic: `ReviewFinding`, `EvidenceGap`, `ApprovalDecision`,
+`WorkflowStageResult`, `WorkflowExecution`), plus two purely-additive
+items: `WorkflowSettings` in `app/config/settings.py` and
+`build_workflow_synthesis_prompt()` in `app/config/prompt_config.py`.
+CLI: `python -m app.workflows list|describe|run|status|approve|resume|cancel`.
+Execution state persists to `workflow_store/<execution_id>.json` after
+every stage, making any execution resumable from a separate process
+invocation, including across a crash. See root `README.md` for the full
+design, CLI usage, and sample output. Verified against the real
+knowledge base and via `python -m app.evaluation.workflow_evaluator`
+(10/10 seed cases passing): a missing rollback plan forces
+`INSUFFICIENT_EVIDENCE` even after human approval; Architecture Review/
+Incident Review/Executive Assessment always pause before their final
+synthesis; Production Readiness Review/AI Solution Review pause only on
+a blocking finding; a cancelled execution can never be resumed. 317
+tests total (214 unchanged + 103 new).
+
+## Milestone 7+ — not started
+
+A thin API/UI layer, and evaluating advisor/workflow answer *quality*
+specifically (beyond the deterministic structural checks Milestones 3
+and 6 already do), are still empty scaffolding under `app/` (`api/`,
+`telemetry/`, and everything in `rag/`/`services/`/`evaluation/` not
+listed above). Build on top of Milestone 6's
+`WorkflowEngine`/`WorkflowDefinition` rather than re-implementing stage
+execution or persistence; conflict detection currently requires literal
+marker phrases in advisor answer text and cannot fire under the default
+offline `FakeModelProvider` (see Milestone 6's README Limitations) --
+this is the main gap a real-provider evaluation pass would close.

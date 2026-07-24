@@ -66,8 +66,28 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | `agents/orchestrator.py` | `ConsolidatedAdvisorResponse` frozen dataclass, `AdvisorOrchestrator` — bounded execution (primary → supporting → at most one synthesis call), citation dedup by `chunk_id`, `build_default_orchestrator()` |
 | `rag/ask.py` | + `--auto-route` flag (mutually exclusive with `--advisor`) — always prints a `Routing:` block, then the consolidated answer |
 
+## Implemented (Milestone 6)
+
+| Module | Purpose |
+|---|---|
+| `models/workflow.py` | `ReviewFinding`, `EvidenceGap`, `ApprovalDecision`, `WorkflowStageResult`, `WorkflowExecution` (pydantic — persisted, unlike Milestone 5's plain-dataclass routing/orchestration types) |
+| `config/settings.py` | + `WorkflowSettings.from_env()` — same file, same pattern as every other settings class |
+| `config/prompt_config.py` | + `WorkflowSynthesisInput`, `build_workflow_synthesis_prompt()` — reuses `GROUNDING_GUARDRAILS` for the workflow's one bounded synthesis call |
+| `workflows/definitions.py` | `WorkflowStageDefinition`, `WorkflowDefinition` frozen dataclasses, `validate_definition()` (cycle detection via Kahn's algorithm, duplicate/unsupported-type/missing-stage rejection, precomputed `execution_order`) |
+| `workflows/registry.py` | `WORKFLOW_REGISTRY`, `get_workflow()`, `list_workflows()`, `UnknownWorkflowError` — static dict, eager validation at import time, same pattern as `agents/registry.py` |
+| `workflows/input_validation.py` | `validate_input()` — schema-driven required-field/enum/type checks + `EvidenceGap` detection for missing-but-expected optional fields |
+| `workflows/conflict_detection.py` | `detect_conflicts()` — rule-based, literal-phrase stance detection between advisor answers on the same topic; no LLM |
+| `workflows/synthesis.py` | `run_synthesis_stage()`, `dedupe_citations()` — the workflow's one bounded extra LLM call, with a provider-failure fallback |
+| `workflows/report.py` | `build_final_report()` — deterministic report-section assembly; the "Sources" section is always computed from citations, never from model text |
+| `workflows/store.py` | `WorkflowStore` — one JSON file per execution under `workflow_store/`, atomic temp-write-then-rename, save-after-every-stage |
+| `workflows/engine.py` | `WorkflowEngine` — `.run()` / `.resume()` / `.approve()` / `.cancel()`; walks the precomputed `execution_order`, dispatches by `stage_type`, persists after every stage |
+| `workflows/catalog/*.py` | 5 workflow definitions: `architecture_review.py`, `ai_solution_review.py`, `production_readiness_review.py`, `incident_review.py`, `executive_ai_transformation_assessment.py` |
+| `workflows/cli.py`, `workflows/__main__.py` | CLI: `python -m app.workflows list\|describe\|run\|status\|approve\|resume\|cancel` |
+| `evaluation/workflow_evaluator.py` | Workflow-specific evaluation runner, CLI: `python -m app.evaluation.workflow_evaluator` |
+
 See the [root README](../README.md) for how to run the pipeline, indexer,
-retriever, RAG assistant, advisors, router, evaluator, and tests.
+retriever, RAG assistant, advisors, router, workflows, evaluators, and
+tests.
 
 ## Placeholders (future milestones)
 

@@ -245,3 +245,122 @@
   milestone that adds advisor routing/orchestration") was deleted and
   replaced by `app/agents/orchestrator.py` (correct spelling), now that
   it's actually implemented.
+
+## Milestone 6 — Enterprise Workflow Orchestration
+
+- **Scoped to the 5 fully-specified workflows, not the 7 named in the
+  objective.** Architecture Review, AI Solution Review, Production
+  Readiness Review, Incident Review, and Executive AI Transformation
+  Assessment each got input fields, a stage list, and report sections in
+  the spec; Release Risk Review and Platform Onboarding Review were only
+  named as examples ("workflows such as") with zero further detail, and
+  the spec's own Completion Criteria section only requires the 5. The
+  engine and registry are generic enough that either missing workflow is
+  "write one more `catalog/*.py` file" later, not an engine change.
+- **`ReviewFinding`/`EvidenceGap`/`ApprovalDecision`/`WorkflowStageResult`/
+  `WorkflowExecution` are pydantic; `WorkflowDefinition`/`WorkflowStageDefinition`
+  are frozen dataclasses.** Same split Milestone 3-5 already established
+  (`Citation`/`RagAnswer` pydantic, `RoutingDecision`/`ConsolidatedAdvisorResponse`
+  dataclasses): the pydantic models are what actually gets persisted
+  (`WorkflowStore` writes/reads them every single stage, so
+  `model_dump(mode="json")`/`model_validate()` round-tripping nested
+  citations for free matters); the dataclasses are static config, never
+  persisted, matching `Advisor`.
+- **Conflict detection is new, rule-based, and deliberately coarse** —
+  no dedicated module existed in Milestone 5 to reuse (only a prose
+  instruction in `GROUNDING_GUARDRAILS` telling the LLM to mention
+  conflicts). Built as literal-phrase stance matching (`POSITIVE_MARKERS`
+  vs `BLOCKING_MARKERS` in a bounded window around a fixed topic
+  keyword) rather than a second LLM judge, to keep it as deterministic
+  and explainable as Milestone 5's router. Known consequence: it cannot
+  fire under the default offline `FakeModelProvider`, whose placeholder
+  text never contains the marker phrases — documented as a limitation,
+  exercised directly with literal strings in
+  `tests/test_workflow_conflict_detection.py` instead of via the
+  evaluation dataset.
+- **The workflow synthesis prompt lives in `app/config/prompt_config.py`,
+  not a new prompts module under `app/workflows/`** — preserves the
+  Milestone 5 decision that prompt text only lives in one file.
+  `build_workflow_synthesis_prompt()` takes plain rendered-text
+  parameters (via a new `WorkflowSynthesisInput` dataclass), never a
+  workflow type, so the one-way `app/workflows` → `app/config` import
+  direction never has to run backward, same trick `SynthesisInput` used
+  to avoid a circular import back into `app/agents`.
+- **`stage_type` is a closed set of exactly six values**
+  (`validate_input`, `advisor_review`, `conflict_review`,
+  `human_approval`, `executive_synthesis`, `final_report`), rejected at
+  registry-load time if violated. Two spec-suggested stages that didn't
+  cleanly map to a new type were folded into existing ones rather than
+  growing the set: Incident Review's "Timeline and Evidence Review"
+  became part of `validate_input`'s evidence-gap detection (timeline is
+  just another schema field with an `evidence_gap` declaration), and
+  "Blocking-Risk Approval Checkpoint" reused `human_approval` with a new
+  `approval_condition="on_blocking_finding"` rather than inventing a
+  seventh stage type.
+- **Two narrow, declarative conditionals on `WorkflowStageDefinition` —
+  `approval_condition` and `skip_unless_input_truthy` — instead of a
+  rule engine.** The spec's pause conditions ("pause if Security or
+  Release reports a blocking risk", "Security Advisor Review When
+  Applicable") needed *some* conditionality, but a general expression
+  language would have violated "no arbitrary rule DSL" from the same
+  spec. Both are single named-field checks against already-computed
+  execution state (prior blocking findings/gaps, or one input field),
+  enumerable and fully unit-tested.
+- **Stage execution order is computed once, at registry-build time, not
+  re-sorted per run.** The 5 workflows' `depends_on` graphs are close to
+  linear; a full dynamic scheduler would be over-engineering relative to
+  actual need. `WorkflowEngine._advance()` just walks the precomputed
+  `execution_order` and skips whatever's already in `stage_results` —
+  this is also what makes "no duplicate stage execution" a structural
+  guarantee rather than something to carefully avoid.
+- **The engine persists after every single stage, not batched** — this
+  is the actual resumability mechanism. `WorkflowStore.save()` writes to
+  a temp file and renames into place (unlike `LocalVectorStore.persist()`,
+  which doesn't bother, since it's called far less often) specifically
+  because per-stage persistence multiplies the odds of an interrupted
+  write.
+- **A paused `awaiting_approval` execution cannot be resumed via
+  `resume()` directly — `approve()` must be called first.** Simpler
+  contract than allowing both entry points to do the same thing, and it
+  makes "who unblocked this and what did they say" always traceable to
+  an explicit `ApprovalDecision`, never an implicit "someone just
+  re-ran it."
+- **Production Readiness Review's bounded recommendation
+  (`GO`/`GO_WITH_CONDITIONS`/`NO_GO`/`INSUFFICIENT_EVIDENCE`) is computed
+  by a workflow-local function (`determine_recommendation()` in
+  `catalog/production_readiness_review.py`), wired through a new
+  optional `WorkflowDefinition.recommendation_rule` hook** — kept off
+  the generic engine/report modules since only this one workflow needs a
+  bounded enum; "the workflow engine must not directly contain
+  advisor-specific logic" from the spec's Architecture Expectations
+  ruled out hardcoding it into `engine.py` or `report.py`.
+- **`report.py`'s narrative sections are a best-effort header-line split
+  of the synthesis answer, with one deterministic exception.** The
+  synthesis prompt asks the model to structure its answer using the
+  workflow's declared section names, but nothing enforces that it does
+  — under `FakeModelProvider` it never does. Rather than fail or
+  fabricate missing sections, unmatched text collapses into the first
+  declared section (never dropped). The "Sources" section is the one
+  exception: always computed from `WorkflowExecution`'s own citations,
+  never trusted to the model's text, so it's never lost to a formatting
+  mismatch.
+- **`app/evaluation/workflow_evaluator.py` is a new sibling file, not an
+  extension of `rag_evaluator.py`** — same reasoning `app/agents/router.py`
+  and `orchestrator.py` stayed separate from `app/rag/pipeline.py`:
+  workflow eval cases have a fundamentally different shape (multi-stage
+  expectations, ~10 new metric dimensions) that would force nullable
+  fields and branching into an already-complete, tested module. The
+  evaluation dataset only asserts `GO`/`INSUFFICIENT_EVIDENCE` recommendations
+  and omits `expect_conflict=True` cases entirely, since both require
+  conflict-detected findings that cannot occur under the offline
+  `FakeModelProvider` the milestone requires ("must not call external
+  APIs") — `NO_GO`/`GO_WITH_CONDITIONS` and conflict detection are
+  covered directly in `tests/test_workflow_engine.py` /
+  `tests/test_workflow_conflict_detection.py` instead.
+- **`app/workflows/__main__.py` is a deliberate, spec-driven exception**
+  to the rest of the codebase's "CLI is a flat file run via its full
+  module path" convention (`python -m app.rag.ask`, not `python -m
+  app.rag`) — the spec explicitly calls for `python -m app.workflows` as
+  a bare package, so a `__main__.py` is required; `cli.py` still holds
+  all the actual argument parsing and formatting logic, same
+  logic/formatting split as `app/rag/ask.py`.
