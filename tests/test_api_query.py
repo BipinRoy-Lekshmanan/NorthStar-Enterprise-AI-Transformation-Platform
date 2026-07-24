@@ -232,3 +232,32 @@ def test_successful_query_records_an_audit_event(client, tmp_path):
     assert events[0].action == "grounded_question_asked"
     assert events[0].resource_id == "testing"
     assert events[0].request_id  # correlates with X-Request-ID
+
+
+def test_markdown_format_returns_a_markdown_document(client):
+    response = client.post(
+        "/api/v1/query?format=markdown",
+        json={"question": "What testing evidence is required?", "advisor": "testing"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert response.text.startswith("# Grounded Query Answer")
+    assert "What testing evidence is required?" in response.text
+    assert "Northstar Lending Corporation is a fictional company" in response.text
+
+
+def test_json_is_still_the_default_format(client):
+    response = client.post(
+        "/api/v1/query", json={"question": "What testing evidence is required?", "advisor": "testing"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_invalid_format_value_returns_422(client):
+    response = client.post(
+        "/api/v1/query?format=pdf", json={"question": "What testing evidence is required?", "advisor": "testing"},
+        headers=AUTH_HEADERS,
+    )
+    assert response.status_code == 422

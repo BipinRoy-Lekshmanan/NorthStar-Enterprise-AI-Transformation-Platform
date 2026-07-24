@@ -257,6 +257,14 @@ def test_completed_execution_exposes_report_and_blocks_cancel(client, engine):
     assert cancel.status_code == 409
     assert cancel.json()["error"]["code"] == "WORKFLOW_ALREADY_COMPLETED"
 
+    markdown_report = client.get(
+        f"/api/v1/workflows/executions/{execution_id}/report?format=markdown", headers=VIEWER_HEADERS,
+    )
+    assert markdown_report.status_code == 200
+    assert markdown_report.headers["content-type"].startswith("text/markdown")
+    assert "architecture_review" in markdown_report.text
+    assert "Northstar Lending Corporation is a fictional company" in markdown_report.text
+
 
 def test_cancel_a_running_execution(client, engine):
     execute_response = client.post(

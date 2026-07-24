@@ -442,6 +442,49 @@ def test_health_detail_calls_the_right_endpoint(monkeypatch):
     assert client.health_detail() == {"status": "ok"}
 
 
+def test_ask_query_markdown_requests_markdown_format(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, text="# Grounded Query Answer\n\nHello.")
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    result = client.ask_query_markdown(question="hi", advisor="auto")
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/query?format=markdown"
+    assert captured["json"] == {"question": "hi", "advisor": "auto"}
+    assert result == "# Grounded Query Answer\n\nHello."
+
+
+def test_get_workflow_report_markdown_requests_markdown_format(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://test/api/v1/workflows/executions/exec-1/report?format=markdown"
+        return httpx.Response(200, text="# exec-1 Report")
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_workflow_report_markdown("exec-1") == "# exec-1 Report"
+
+
+def test_request_text_raises_api_client_error_on_http_error(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        return httpx.Response(
+            404, json={"error": {"code": "NOT_FOUND", "message": "Execution not found.", "details": {}, "request_id": "r1"}},
+        )
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    with pytest.raises(ApiClientError) as exc_info:
+        client.get_workflow_report_markdown("does-not-exist")
+    assert exc_info.value.code == "NOT_FOUND"
+
+
 def test_audit_events_passes_limit_param(monkeypatch):
     captured = {}
 

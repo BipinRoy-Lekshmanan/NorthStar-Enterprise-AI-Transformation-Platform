@@ -10,7 +10,8 @@ permission.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from app.api.dependencies.services import get_audit_store, get_rag_service, get_rag_settings, get_router_settings
 from app.api.schemas.query import QueryRequest, QueryResponse, build_query_response
@@ -21,15 +22,20 @@ from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
 from app.config.settings import RagSettings, RouterSettings
+from app.export.common import build_query_export_envelope
+from app.export.markdown_renderer import render_query_answer_markdown
 from app.rag.pipeline import RagService
 
 router = APIRouter()
 
 
-@router.post("/query", summary="Ask a grounded question", tags=["Queries"], response_model=QueryResponse)
+@router.post(
+    "/query", summary="Ask a grounded question", tags=["Queries"], response_model=QueryResponse,
+)
 def ask_question(
     request: Request,
     body: QueryRequest,
+    format: str = Query(default="json", pattern="^(json|markdown)$", description="'json' (default) or 'markdown'"),
     service: RagService = Depends(get_rag_service),
     rag_settings: RagSettings = Depends(get_rag_settings),
     router_settings: RouterSettings = Depends(get_router_settings),
@@ -59,4 +65,8 @@ def ask_question(
             audit=audit,
         )
 
-    return build_query_response(result, request_id)
+    response = build_query_response(result, request_id)
+    if format == "markdown":
+        markdown_text = render_query_answer_markdown(build_query_export_envelope(response.model_dump(mode="json")))
+        return PlainTextResponse(markdown_text, media_type="text/markdown")
+    return response

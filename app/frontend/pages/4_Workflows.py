@@ -217,3 +217,18 @@ with tab_executions:
                     for header, content in report["sections"].items():
                         st.markdown(f"**{header}**")
                         st.write(content or "(no content)")
+
+                    export_cols = st.columns(2)
+                    export_cols[0].download_button(
+                        "Download as JSON", data=json.dumps(execution, indent=2),
+                        file_name=f"{selected_execution_id}_report.json", mime="application/json",
+                    )
+                    try:
+                        markdown_report = client.get_workflow_report_markdown(selected_execution_id)
+                    except ApiClientError as exc:
+                        export_cols[1].caption(f"Markdown export unavailable: {exc.message}")
+                    else:
+                        export_cols[1].download_button(
+                            "Download as Markdown", data=markdown_report,
+                            file_name=f"{selected_execution_id}_report.md", mime="text/markdown",
+                        )

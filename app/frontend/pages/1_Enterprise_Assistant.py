@@ -6,6 +6,7 @@ lives here.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -98,6 +99,22 @@ if st.button("Ask", type="primary", disabled=not question.strip()):
         if result.get("diagnostics"):
             with st.expander("Diagnostics"):
                 st.json(result["diagnostics"])
+
+        st.markdown("### Export")
+        export_cols = st.columns(2)
+        export_cols[0].download_button(
+            "Download as JSON", data=json.dumps(result, indent=2), file_name="grounded_answer.json",
+            mime="application/json",
+        )
+        try:
+            markdown_export = client.ask_query_markdown(**payload)
+        except ApiClientError as exc:
+            export_cols[1].caption(f"Markdown export unavailable: {exc.message}")
+        else:
+            export_cols[1].download_button(
+                "Download as Markdown", data=markdown_export, file_name="grounded_answer.md",
+                mime="text/markdown",
+            )
 
 st.markdown("---")
 st.markdown("#### Example questions by category")

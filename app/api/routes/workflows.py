@@ -10,6 +10,7 @@ separate `approvals` router -- reviewer-tier -- not here.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from app.api.dependencies.services import get_audit_store, get_workflow_engine
 from app.api.errors import ApiError, ErrorCode
@@ -47,6 +48,8 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.export.common import build_workflow_report_export_envelope
+from app.export.markdown_renderer import render_workflow_report_markdown
 from app.workflows.engine import WorkflowEngine
 from app.workflows.synthesis import dedupe_citations
 
@@ -179,7 +182,9 @@ def cancel_execution_route(
     tags=["Workflows"], response_model=WorkflowReportOut,
 )
 def get_report_route(
-    execution_id: str, engine: WorkflowEngine = Depends(get_workflow_engine),
+    execution_id: str,
+    format: str = Query(default="json", pattern="^(json|markdown)$", description="'json' (default) or 'markdown'"),
+    engine: WorkflowEngine = Depends(get_workflow_engine),
     _user: User = Depends(require_role(Role.VIEWER)),
 ) -> WorkflowReportOut:
     execution = get_execution(engine, execution_id)
@@ -189,7 +194,13 @@ def get_report_route(
             404, ErrorCode.NOT_FOUND,
             f"Execution '{execution_id}' has not yet produced a final report (status='{execution.status}').",
         )
-    return WorkflowReportOut(
+    report = WorkflowReportOut(
         execution_id=execution.execution_id, workflow_id=execution.workflow_id, status=execution.status,
         sections=sections,
     )
+    if format == "markdown":
+        envelope = build_workflow_report_export_envelope(
+            report.model_dump(mode="json"), _detail_out(execution).model_dump(mode="json"),
+        )
+        return PlainTextResponse(render_workflow_report_markdown(envelope), media_type="text/markdown")
+    return report

@@ -53,6 +53,21 @@ class ApiClient:
             return {}
         return response.json()
 
+    def _request_text(self, method: str, path: str, **kwargs: Any) -> str:
+        """Like `_request`, but for endpoints called with `?format=markdown`
+        that return a plain-text body rather than JSON."""
+        url = f"{self.base_url}{path}"
+        try:
+            response = httpx.request(method, url, headers=self._headers(), timeout=self.timeout, **kwargs)
+        except httpx.ConnectError as exc:
+            raise ApiClientError(f"Could not connect to the API at {self.base_url}. Is it running?") from exc
+        except httpx.TimeoutException as exc:
+            raise ApiClientError(f"Request to {path} timed out after {self.timeout}s.") from exc
+
+        if response.status_code >= 400:
+            self._raise_for_error(response)
+        return response.text
+
     def _raise_for_error(self, response: httpx.Response) -> None:
         message = response.text
         code = None
@@ -77,6 +92,9 @@ class ApiClient:
 
     def ask_query(self, **payload: Any) -> dict:
         return self._request("POST", "/api/v1/query", json=payload)
+
+    def ask_query_markdown(self, **payload: Any) -> str:
+        return self._request_text("POST", "/api/v1/query?format=markdown", json=payload)
 
     # -- advisors -----------------------------------------------------------------
 
@@ -147,6 +165,9 @@ class ApiClient:
 
     def get_workflow_report(self, execution_id: str) -> dict:
         return self._request("GET", f"/api/v1/workflows/executions/{execution_id}/report")
+
+    def get_workflow_report_markdown(self, execution_id: str) -> str:
+        return self._request_text("GET", f"/api/v1/workflows/executions/{execution_id}/report?format=markdown")
 
     # -- approvals -----------------------------------------------------------------
 
