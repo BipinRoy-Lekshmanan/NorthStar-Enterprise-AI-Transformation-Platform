@@ -1,0 +1,54 @@
+# ADR-006: Enterprise RAG Platform
+
+Status: Accepted
+
+Date: 2026-01-20
+
+Owner:
+Chief Architect
+
+## Context
+
+Engineering teams need AI grounded in enterprise documentation...
+
+## Problem
+
+LLMs hallucinate without enterprise context.
+
+## Options Considered
+
+1. Fine-tuning
+2. RAG
+3. Prompt-only
+
+## Decision
+
+Adopt Enterprise RAG using vector search.
+
+## Rationale
+
+- Lower cost
+- Easier updates
+- Better governance
+- Explainability
+
+## Consequences
+
+Positive:
+- Better AI accuracy
+- Faster updates
+
+Negative:
+- Requires vector infrastructure
+
+## Alternatives Rejected
+
+Fine-tuning was rejected because...
+
+## Related Documents
+
+Enterprise AI Reference Architecture
+
+AI Engineering Standards
+
+Platform Engineering
