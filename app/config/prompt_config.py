@@ -127,3 +127,58 @@ def build_prompt(
         user=build_user_prompt(question, context_blocks),
         version=prompt_version or PROMPT_VERSION,
     )
+
+
+# -- Milestone 5: multi-advisor synthesis -----------------------------------------------
+
+SYNTHESIS_PROMPT_VERSION = f"{PROMPT_VERSION}+synthesis-v1"
+
+_SYNTHESIS_PERSONA = """You are the Northstar Advisor Synthesis Assistant. You have been given \
+grounded answers already produced by one or more Northstar domain advisors for the same \
+question -- one primary advisor and, optionally, one or more supporting advisors -- and your \
+job is to consolidate them into a single coherent answer for the reader."""
+
+_SYNTHESIS_EXTRA_GUIDANCE = """This is a consolidation step, not a new research step:
+- Do not introduce any claim, policy, number, or procedure that is not already present in the \
+supplied advisor answers below. You have no access to the underlying Northstar reference \
+material -- only to what the advisors already concluded.
+- Attribute claims by advisor name (e.g. "According to the Release Advisor, ...") rather than \
+using [S#] source markers -- those refer to sources inside the advisors' own answers, not to \
+material supplied to you directly.
+- Where advisors agree, consolidate rather than repeat. Where they add distinct, non-overlapping \
+detail, keep both. Where they conflict, point out the conflict rather than silently picking one.
+- Lead with the primary advisor's answer as the backbone, and weave in supporting advisors' \
+material only where it materially adds to or qualifies the answer."""
+
+_SYNTHESIS_STRUCTURE = """Structure the consolidated answer as:
+Answer
+Perspectives by Advisor
+Risks or Considerations"""
+
+
+@dataclass(frozen=True)
+class SynthesisInput:
+    advisor_name: str
+    role: str  # "primary" or "supporting"
+    answer: str
+
+
+def build_synthesis_prompt(question: str, sections: list[SynthesisInput]) -> RagPrompt:
+    """Build the prompt for the one bounded synthesis call in `AdvisorOrchestrator`.
+
+    Operates strictly on already-grounded advisor answers (`sections`),
+    never on raw knowledge-base text -- the model has nothing to invent
+    new claims from, only to consolidate.
+    """
+    system = build_system_prompt(_SYNTHESIS_PERSONA, _SYNTHESIS_STRUCTURE, _SYNTHESIS_EXTRA_GUIDANCE)
+    rendered_sections = "\n\n".join(
+        f"[{section.role.upper()}: {section.advisor_name}]\n{section.answer.strip()}"
+        for section in sections
+    )
+    user = (
+        "Advisor answers to consolidate:\n\n"
+        f"{rendered_sections}\n\n"
+        "Question:\n"
+        f"{question.strip()}"
+    )
+    return RagPrompt(system=system, user=user, version=SYNTHESIS_PROMPT_VERSION)
