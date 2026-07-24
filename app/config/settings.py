@@ -33,8 +33,21 @@ DEFAULT_EMBEDDING_DIMENSIONS = 512
 DEFAULT_VECTOR_STORE_DIR = "vector_store"
 DEFAULT_RETRIEVAL_TOP_K = 5
 
+DEFAULT_LLM_PROVIDER = "fake"
+DEFAULT_OPENAI_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_LLM_TEMPERATURE = 0.0
+DEFAULT_LLM_MAX_OUTPUT_TOKENS = 1024
+DEFAULT_LLM_TIMEOUT_SECONDS = 30.0
+DEFAULT_CONTEXT_MAX_CHARACTERS = 6000
+DEFAULT_CONTEXT_MAX_CHUNKS = 6
+DEFAULT_CONTEXT_MIN_SCORE = 0.1
+DEFAULT_MAX_QUESTION_LENGTH = 2000
+DEFAULT_INSUFFICIENT_CONTEXT_MIN_RESULTS = 1
+DEFAULT_INSUFFICIENT_CONTEXT_MIN_SCORE = 0.15
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
+VALID_LLM_PROVIDERS = {"fake", "openai"}
 
 
 class ConfigurationError(ValueError):
@@ -210,6 +223,112 @@ class RetrievalSettings:
             )
 
 
+@dataclass(frozen=True)
+class RagSettings:
+    """Validated configuration for grounded answer generation (Milestone 3)."""
+
+    llm_provider: str
+    llm_model: str
+    llm_api_key: str | None
+    llm_temperature: float
+    llm_max_output_tokens: int
+    llm_timeout_seconds: float
+    context_max_characters: int
+    context_max_chunks: int
+    context_min_score: float
+    max_question_length: int
+    insufficient_context_min_results: int
+    insufficient_context_min_score: float
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "RagSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        llm_provider = env.get("LLM_PROVIDER", DEFAULT_LLM_PROVIDER).strip().lower()
+
+        default_model = DEFAULT_OPENAI_LLM_MODEL if llm_provider == "openai" else "fake-echo-v1"
+        llm_model = env.get("LLM_MODEL", default_model)
+        llm_api_key = env.get("LLM_API_KEY") or None
+
+        settings = cls(
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_api_key=llm_api_key,
+            llm_temperature=_parse_float(env, "LLM_TEMPERATURE", DEFAULT_LLM_TEMPERATURE),
+            llm_max_output_tokens=_parse_int(env, "LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS),
+            llm_timeout_seconds=_parse_float(env, "LLM_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS),
+            context_max_characters=_parse_int(env, "CONTEXT_MAX_CHARACTERS", DEFAULT_CONTEXT_MAX_CHARACTERS),
+            context_max_chunks=_parse_int(env, "CONTEXT_MAX_CHUNKS", DEFAULT_CONTEXT_MAX_CHUNKS),
+            context_min_score=_parse_float(env, "CONTEXT_MIN_SCORE", DEFAULT_CONTEXT_MIN_SCORE),
+            max_question_length=_parse_int(env, "MAX_QUESTION_LENGTH", DEFAULT_MAX_QUESTION_LENGTH),
+            insufficient_context_min_results=_parse_int(
+                env, "INSUFFICIENT_CONTEXT_MIN_RESULTS", DEFAULT_INSUFFICIENT_CONTEXT_MIN_RESULTS
+            ),
+            insufficient_context_min_score=_parse_float(
+                env, "INSUFFICIENT_CONTEXT_MIN_SCORE", DEFAULT_INSUFFICIENT_CONTEXT_MIN_SCORE
+            ),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support the RAG service."""
+        if self.llm_provider not in VALID_LLM_PROVIDERS:
+            raise ConfigurationError(
+                f"LLM_PROVIDER must be one of {sorted(VALID_LLM_PROVIDERS)}, got '{self.llm_provider}'."
+            )
+
+        if not self.llm_model.strip():
+            raise ConfigurationError("LLM_MODEL must not be empty.")
+
+        if self.llm_provider == "openai" and not self.llm_api_key:
+            raise ConfigurationError("LLM_PROVIDER is 'openai' but LLM_API_KEY is not set.")
+
+        if not (0.0 <= self.llm_temperature <= 2.0):
+            raise ConfigurationError(f"LLM_TEMPERATURE must be between 0.0 and 2.0, got {self.llm_temperature}.")
+
+        if self.llm_max_output_tokens <= 0:
+            raise ConfigurationError(
+                f"LLM_MAX_OUTPUT_TOKENS must be a positive integer, got {self.llm_max_output_tokens}."
+            )
+
+        if self.llm_timeout_seconds <= 0:
+            raise ConfigurationError(
+                f"LLM_TIMEOUT_SECONDS must be positive, got {self.llm_timeout_seconds}."
+            )
+
+        if self.context_max_characters <= 0:
+            raise ConfigurationError(
+                f"CONTEXT_MAX_CHARACTERS must be a positive integer, got {self.context_max_characters}."
+            )
+
+        if self.context_max_chunks <= 0:
+            raise ConfigurationError(
+                f"CONTEXT_MAX_CHUNKS must be a positive integer, got {self.context_max_chunks}."
+            )
+
+        if self.context_min_score < 0:
+            raise ConfigurationError(f"CONTEXT_MIN_SCORE must be zero or positive, got {self.context_min_score}.")
+
+        if self.max_question_length <= 0:
+            raise ConfigurationError(
+                f"MAX_QUESTION_LENGTH must be a positive integer, got {self.max_question_length}."
+            )
+
+        if self.insufficient_context_min_results <= 0:
+            raise ConfigurationError(
+                "INSUFFICIENT_CONTEXT_MIN_RESULTS must be a positive integer, got "
+                f"{self.insufficient_context_min_results}."
+            )
+
+        if self.insufficient_context_min_score < 0:
+            raise ConfigurationError(
+                "INSUFFICIENT_CONTEXT_MIN_SCORE must be zero or positive, got "
+                f"{self.insufficient_context_min_score}."
+            )
+
+
 def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
     raw = env.get(key)
     if raw is None or raw.strip() == "":
@@ -218,3 +337,13 @@ def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
         return int(raw)
     except ValueError as exc:
         raise ConfigurationError(f"{key} must be an integer, got '{raw}'.") from exc
+
+
+def _parse_float(env: Mapping[str, str], key: str, default: float) -> float:
+    raw = env.get(key)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{key} must be a number, got '{raw}'.") from exc
