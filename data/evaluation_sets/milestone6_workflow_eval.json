@@ -1,0 +1,102 @@
+[
+  {
+    "id": "workflow-prr-001",
+    "workflow_id": "production_readiness_review",
+    "input_file": "examples/workflows/production_readiness_missing_rollback.json",
+    "expected_stages": ["release_review", "testing_review", "security_review", "devsecops_review", "platform_review"],
+    "expected_findings": ["rollback"],
+    "expected_final_recommendation": "INSUFFICIENT_EVIDENCE",
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-prr-002",
+    "workflow_id": "production_readiness_review",
+    "input_file": "examples/workflows/production_readiness_complete.json",
+    "expected_stages": ["release_review", "testing_review", "security_review", "devsecops_review", "platform_review"],
+    "expected_findings": [],
+    "expected_final_recommendation": "GO",
+    "requires_citations": true,
+    "requires_human_approval": false
+  },
+  {
+    "id": "workflow-prr-003",
+    "workflow_id": "production_readiness_review",
+    "input_file": "examples/workflows/production_readiness_partial_evidence.json",
+    "expected_stages": ["release_review", "testing_review"],
+    "expected_findings": ["performance"],
+    "expected_final_recommendation": "GO",
+    "requires_citations": true,
+    "requires_human_approval": false
+  },
+  {
+    "id": "workflow-arch-001",
+    "workflow_id": "architecture_review",
+    "input_file": "examples/workflows/architecture_review_loan_notification.json",
+    "expected_stages": ["architecture_review", "security_review", "platform_review", "testing_review"],
+    "expected_findings": [],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-ai-001",
+    "workflow_id": "ai_solution_review",
+    "input_file": "examples/workflows/ai_solution_review_underwriting_summarizer.json",
+    "expected_stages": ["ai_engineering_review", "security_review", "architecture_review", "testing_review", "devsecops_review"],
+    "expected_findings": [],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": false
+  },
+  {
+    "id": "workflow-ai-002",
+    "workflow_id": "ai_solution_review",
+    "input_file": "examples/workflows/ai_solution_review_missing_human_review.json",
+    "expected_stages": ["ai_engineering_review", "security_review", "architecture_review"],
+    "expected_findings": ["human review"],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-incident-001",
+    "workflow_id": "incident_review",
+    "input_file": "examples/workflows/incident_review_payment_latency.json",
+    "expected_stages": ["incident_review", "release_review", "platform_review"],
+    "expected_findings": [],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-incident-002",
+    "workflow_id": "incident_review",
+    "input_file": "examples/workflows/incident_review_missing_timeline.json",
+    "expected_stages": ["incident_review", "release_review", "platform_review"],
+    "expected_findings": ["timeline"],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-exec-001",
+    "workflow_id": "executive_ai_transformation_assessment",
+    "input_file": "examples/workflows/executive_ai_transformation_18_month.json",
+    "expected_stages": ["executive_transformation_review", "ai_engineering_review", "developer_experience_review", "platform_review", "security_review"],
+    "expected_findings": [],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  },
+  {
+    "id": "workflow-exec-002",
+    "workflow_id": "executive_ai_transformation_assessment",
+    "input_file": "examples/workflows/executive_ai_transformation_missing_governance.json",
+    "expected_stages": ["executive_transformation_review", "ai_engineering_review"],
+    "expected_findings": ["governance"],
+    "expected_final_recommendation": null,
+    "requires_citations": true,
+    "requires_human_approval": true
+  }
+]
