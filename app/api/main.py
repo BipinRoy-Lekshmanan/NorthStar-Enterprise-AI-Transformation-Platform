@@ -17,18 +17,20 @@ from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware.request_context import RequestContextMiddleware
-from app.api.routes import advisors, approvals, auth, health, knowledge, query, workflows
+from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, query, workflows
 from app.audit.store import AuditStore
 from app.auth.users import load_users
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
+    EvaluationSettings,
     IngestionSettings,
     RagSettings,
     RetrievalSettings,
     RouterSettings,
     WorkflowSettings,
 )
+from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import build_default_rag_service
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
@@ -67,6 +69,9 @@ async def lifespan(app: FastAPI):
         app.state.rag_service, WorkflowStore(workflow_settings.workflow_store_dir), rag_settings,
     )
 
+    evaluation_settings = EvaluationSettings.from_env()
+    app.state.evaluation_run_store = EvaluationRunStore(evaluation_settings.evaluation_runs_dir)
+
     yield
 
 
@@ -92,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router, prefix=API_PREFIX)
     app.include_router(workflows.router, prefix=API_PREFIX)
     app.include_router(approvals.router, prefix=API_PREFIX)
+    app.include_router(evaluation.router, prefix=API_PREFIX)
 
     return app
 

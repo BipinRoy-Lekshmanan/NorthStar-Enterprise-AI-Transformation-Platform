@@ -14,7 +14,14 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.audit.store import AuditStore
-from app.config.settings import IngestionSettings, RagSettings, RetrievalSettings, RouterSettings, WorkflowSettings
+from app.config.settings import (
+    IngestionSettings,
+    RagSettings,
+    RetrievalSettings,
+    RouterSettings,
+    WorkflowSettings,
+)
+from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
 from app.workflows.engine import WorkflowEngine
 
@@ -29,6 +36,10 @@ def get_workflow_engine(request: Request) -> WorkflowEngine:
 
 def get_workflow_settings(request: Request) -> WorkflowSettings:
     return request.app.state.workflow_settings
+
+
+def get_evaluation_run_store(request: Request) -> EvaluationRunStore:
+    return request.app.state.evaluation_run_store
 
 
 def get_audit_store(request: Request) -> AuditStore:

@@ -386,3 +386,47 @@ def test_decide_approval_posts_decision_reviewer_and_comments(monkeypatch):
     assert captured["method"] == "POST"
     assert captured["url"] == "http://test/api/v1/approvals/exec-1/decide"
     assert captured["json"] == {"decision": "approve", "reviewer": "alice", "comments": "Looks good."}
+
+
+def test_run_evaluation_posts_category(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"run_id": "run-1"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.run_evaluation("workflows")
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/evaluation/runs"
+    assert captured["json"] == {"category": "workflows"}
+
+
+def test_list_evaluation_runs_passes_category_filter_and_pagination(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return httpx.Response(200, json={"items": [], "page": 1, "page_size": 25, "total_items": 0, "total_pages": 0})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.list_evaluation_runs(category="rag", page=2, page_size=10)
+
+    assert captured["url"] == "http://test/api/v1/evaluation/runs"
+    assert captured["params"] == {"page": 2, "page_size": 10, "category": "rag"}
+
+
+def test_get_evaluation_run_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/evaluation/runs/run-1"
+        return httpx.Response(200, json={"run_id": "run-1"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_evaluation_run("run-1") == {"run_id": "run-1"}

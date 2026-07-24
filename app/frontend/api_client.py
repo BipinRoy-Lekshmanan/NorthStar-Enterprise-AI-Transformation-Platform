@@ -158,3 +158,17 @@ class ApiClient:
             "POST", f"/api/v1/approvals/{execution_id}/decide",
             json={"decision": decision, "reviewer": reviewer, "comments": comments},
         )
+
+    # -- evaluation -----------------------------------------------------------------
+
+    def run_evaluation(self, category: str) -> dict:
+        return self._request("POST", "/api/v1/evaluation/runs", json={"category": category})
+
+    def list_evaluation_runs(self, category: str | None = None, page: int = 1, page_size: int = 25) -> dict:
+        params = {"page": page, "page_size": page_size}
+        if category:
+            params["category"] = category
+        return self._request("GET", "/api/v1/evaluation/runs", params=params)
+
+    def get_evaluation_run(self, run_id: str) -> dict:
+        return self._request("GET", f"/api/v1/evaluation/runs/{run_id}")

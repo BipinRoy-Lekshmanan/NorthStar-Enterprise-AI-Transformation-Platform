@@ -66,6 +66,8 @@ DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
 
 DEFAULT_AUDIT_LOG_DIR = "audit_log"
 
+DEFAULT_EVALUATION_RUNS_DIR = "evaluation_runs"
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -542,6 +544,27 @@ class AuthSettings:
         """
         if not str(self.users_file).strip():
             raise ConfigurationError("AUTH_USERS_FILE must not be empty.")
+
+
+@dataclass(frozen=True)
+class EvaluationSettings:
+    """Validated configuration for persisted evaluation run history (Milestone 7)."""
+
+    evaluation_runs_dir: Path
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "EvaluationSettings":
+        """Build settings from environment variables and validate them eagerly."""
+        env = env if env is not None else os.environ
+
+        settings = cls(evaluation_runs_dir=_resolve(env.get("EVALUATION_RUNS_DIR", DEFAULT_EVALUATION_RUNS_DIR)))
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """Fail fast with a clear message when configuration cannot support evaluation run persistence."""
+        if not str(self.evaluation_runs_dir).strip():
+            raise ConfigurationError("EVALUATION_RUNS_DIR must not be empty.")
 
 
 def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
