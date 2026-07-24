@@ -11,6 +11,8 @@ service per test instead of monkeypatching.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import Request
 
 from app.audit.store import AuditStore
@@ -40,6 +42,10 @@ def get_workflow_settings(request: Request) -> WorkflowSettings:
 
 def get_evaluation_run_store(request: Request) -> EvaluationRunStore:
     return request.app.state.evaluation_run_store
+
+
+def get_started_at(request: Request) -> datetime:
+    return request.app.state.started_at
 
 
 def get_audit_store(request: Request) -> AuditStore:

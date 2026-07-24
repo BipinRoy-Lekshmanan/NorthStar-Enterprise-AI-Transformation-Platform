@@ -172,3 +172,11 @@ class ApiClient:
 
     def get_evaluation_run(self, run_id: str) -> dict:
         return self._request("GET", f"/api/v1/evaluation/runs/{run_id}")
+
+    # -- platform -----------------------------------------------------------------
+
+    def health_detail(self) -> dict:
+        return self._request("GET", "/api/v1/platform/health")
+
+    def audit_events(self, limit: int = 50) -> list[dict]:
+        return self._request("GET", "/api/v1/platform/audit", params={"limit": limit})

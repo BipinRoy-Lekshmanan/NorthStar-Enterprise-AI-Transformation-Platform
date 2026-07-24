@@ -1,0 +1,45 @@
+"""Platform operations endpoints (Milestone 7).
+
+Detailed health/diagnostics is viewer-level (visibility into whether
+the platform is working). The audit log view is administrator-level --
+it can surface who did what across every user, so it's restricted to
+the same role that already runs knowledge-base administration.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Query
+
+from app.api.dependencies.services import get_audit_store, get_rag_service, get_started_at
+from app.api.schemas.platform import AuditEventOut, HealthDetailOut, build_audit_event_out
+from app.api.services.platform_service import get_health_detail, list_recent_audit_events
+from app.audit.store import AuditStore
+from app.auth.dependencies import require_role
+from app.auth.roles import Role
+from app.auth.users import User
+from app.rag.pipeline import RagService
+
+router = APIRouter()
+
+
+@router.get(
+    "/platform/health", summary="Detailed platform health and component diagnostics", tags=["Platform"],
+    response_model=HealthDetailOut,
+)
+def health_detail_route(
+    service: RagService = Depends(get_rag_service),
+    started_at=Depends(get_started_at),
+    _user: User = Depends(require_role(Role.VIEWER)),
+) -> HealthDetailOut:
+    return HealthDetailOut(**get_health_detail(service, started_at))
+
+
+@router.get(
+    "/platform/audit", summary="Recent audit events", tags=["Platform"], response_model=list[AuditEventOut],
+)
+def audit_events_route(
+    limit: int = Query(default=50, ge=1, le=500),
+    store: AuditStore = Depends(get_audit_store),
+    _user: User = Depends(require_role(Role.ADMINISTRATOR)),
+) -> list[AuditEventOut]:
+    return [build_audit_event_out(event) for event in list_recent_audit_events(store, limit)]

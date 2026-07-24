@@ -430,3 +430,29 @@ def test_get_evaluation_run_calls_the_right_endpoint(monkeypatch):
     monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
     client = ApiClient(base_url="http://test")
     assert client.get_evaluation_run("run-1") == {"run_id": "run-1"}
+
+
+def test_health_detail_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert url == "http://test/api/v1/platform/health"
+        return httpx.Response(200, json={"status": "ok"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.health_detail() == {"status": "ok"}
+
+
+def test_audit_events_passes_limit_param(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.audit_events(limit=10)
+
+    assert captured["url"] == "http://test/api/v1/platform/audit"
+    assert captured["params"] == {"limit": 10}

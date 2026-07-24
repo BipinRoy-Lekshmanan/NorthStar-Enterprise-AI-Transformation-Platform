@@ -12,12 +12,14 @@ the evaluators). Run via `python -m app.api` or
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware.request_context import RequestContextMiddleware
-from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, query, workflows
+from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, platform, query, workflows
+from app.api.version import API_PREFIX, APP_VERSION
 from app.audit.store import AuditStore
 from app.auth.users import load_users
 from app.config.settings import (
@@ -35,9 +37,6 @@ from app.rag.pipeline import build_default_rag_service
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
 
-APP_VERSION = "0.7.0"
-API_PREFIX = "/api/v1"
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +45,8 @@ async def lifespan(app: FastAPI):
     `UserDirectoryError` (fail-fast startup validation) if the configured
     users file is missing/malformed. More singletons (`WorkflowEngine`,
     stores) are added here in later steps."""
+    app.state.started_at = datetime.now(timezone.utc)
+
     auth_settings = AuthSettings.from_env()
     app.state.users = load_users(auth_settings.users_file)
 
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix=API_PREFIX)
     app.include_router(approvals.router, prefix=API_PREFIX)
     app.include_router(evaluation.router, prefix=API_PREFIX)
+    app.include_router(platform.router, prefix=API_PREFIX)
 
     return app
 
