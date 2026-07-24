@@ -1,10 +1,10 @@
 """Static advisor registry.
 
-An explicit tuple of the 8 `Advisor` instances, not dynamic
-plugin-discovery -- auditable at a glance, and adding a 9th advisor is
+An explicit tuple of the 10 `Advisor` instances, not dynamic
+plugin-discovery -- auditable at a glance, and adding an 11th advisor is
 "write one file + one line here." No routing, ranking, or automatic
-advisor selection lives here (or anywhere in this milestone) -- callers
-(the CLI, or a future caller) pick an advisor explicitly by id.
+advisor selection lives here -- see `app/agents/router.py` for that
+(Milestone 5); this module only does lookup by id.
 """
 
 from __future__ import annotations
@@ -13,9 +13,11 @@ from app.agents.ai_engineering_advisor import ADVISOR as AI_ENGINEERING_ADVISOR
 from app.agents.ai_transformation_advisor import ADVISOR as EXECUTIVE_AI_TRANSFORMATION_ADVISOR
 from app.agents.architecture_advisor import ADVISOR as ARCHITECTURE_ADVISOR
 from app.agents.base_agent import Advisor
+from app.agents.developer_experience_advisor import ADVISOR as DEVELOPER_EXPERIENCE_ADVISOR
 from app.agents.devsecops_advisor import ADVISOR as DEVSECOPS_ADVISOR
 from app.agents.incident_advisor import ADVISOR as INCIDENT_MANAGEMENT_ADVISOR
 from app.agents.platform_advisor import ADVISOR as PLATFORM_ENGINEERING_ADVISOR
+from app.agents.release_advisor import ADVISOR as RELEASE_ADVISOR
 from app.agents.security_advisor import ADVISOR as SECURITY_ADVISOR
 from app.agents.testing_advisor import ADVISOR as TESTING_ADVISOR
 
@@ -27,6 +29,8 @@ _ADVISORS: tuple[Advisor, ...] = (
     SECURITY_ADVISOR,
     PLATFORM_ENGINEERING_ADVISOR,
     INCIDENT_MANAGEMENT_ADVISOR,
+    RELEASE_ADVISOR,
+    DEVELOPER_EXPERIENCE_ADVISOR,
     EXECUTIVE_AI_TRANSFORMATION_ADVISOR,
 )
 

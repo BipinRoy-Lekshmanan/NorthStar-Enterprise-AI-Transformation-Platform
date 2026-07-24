@@ -18,6 +18,8 @@ EXPECTED_ADVISOR_IDS = {
     "platform-engineering",
     "incident-management",
     "executive-ai-transformation",
+    "release",
+    "developer-experience",
 }
 
 FILTERED_ADVISOR_IDS = {
@@ -27,6 +29,8 @@ FILTERED_ADVISOR_IDS = {
     "testing": "NLC-ENG-005",
     "platform-engineering": "NLC-ENG-008",
     "incident-management": "NLC-ENG-007",
+    "release": "NLC-ENG-006",
+    "developer-experience": "NLC-ENG-009",
 }
 
 UNFILTERED_ADVISOR_IDS = {"security", "executive-ai-transformation"}
@@ -71,9 +75,9 @@ def test_build_system_prompt_omits_extra_guidance_when_not_given():
 # -- registry -----------------------------------------------------------------------------
 
 
-def test_registry_has_exactly_the_eight_expected_advisors():
+def test_registry_has_exactly_the_ten_expected_advisors():
     assert set(ADVISOR_REGISTRY.keys()) == EXPECTED_ADVISOR_IDS
-    assert len(list_advisors()) == 8
+    assert len(list_advisors()) == 10
 
 
 def test_get_advisor_returns_matching_advisor():
@@ -116,6 +120,13 @@ def test_advisor_system_prompt_always_includes_shared_guardrails(advisor_id):
 def test_advisor_prompt_version_is_tagged_with_advisor_id(advisor_id):
     advisor = get_advisor(advisor_id)
     assert advisor.prompt_version.endswith(f"+{advisor_id}-v1")
+
+
+@pytest.mark.parametrize("advisor_id", sorted(EXPECTED_ADVISOR_IDS))
+def test_advisor_has_non_empty_domain_keywords(advisor_id):
+    advisor = get_advisor(advisor_id)
+    assert len(advisor.domain_keywords) > 0
+    assert all(keyword.strip() for keyword in advisor.domain_keywords)
 
 
 @pytest.mark.parametrize("advisor_id,expected_document_id", sorted(FILTERED_ADVISOR_IDS.items()))
