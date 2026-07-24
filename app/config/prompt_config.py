@@ -182,3 +182,68 @@ def build_synthesis_prompt(question: str, sections: list[SynthesisInput]) -> Rag
         f"{question.strip()}"
     )
     return RagPrompt(system=system, user=user, version=SYNTHESIS_PROMPT_VERSION)
+
+
+# -- Milestone 6: workflow synthesis -----------------------------------------------
+
+WORKFLOW_SYNTHESIS_PROMPT_VERSION = f"{SYNTHESIS_PROMPT_VERSION}+workflow-v1"
+
+_WORKFLOW_SYNTHESIS_PERSONA = """You are the Northstar Workflow Synthesis Assistant. You have been \
+given the completed findings of a structured, multi-stage enterprise review workflow -- advisor \
+stage summaries, structured findings, evidence gaps, detected conflicts, and any human approval \
+comments -- and your job is to consolidate them into the workflow's final report."""
+
+_WORKFLOW_SYNTHESIS_EXTRA_GUIDANCE = """This is a consolidation step over already-completed review \
+stages, not a new research step:
+- Do not introduce any claim, policy, number, or procedure that is not already present in the \
+supplied stage findings below. You have no access to the underlying Northstar reference material \
+-- only to what the review stages already concluded.
+- Attribute claims to the advisor or stage that produced them rather than using [S#] source \
+markers -- those refer to sources inside each stage's own answer, not to material supplied to \
+you directly.
+- Clearly distinguish evidence (what a stage or the input actually stated) from inference (a \
+conclusion you are drawing from it) -- never present an inference as if it were evidence.
+- Preserve every high-severity warning, every unresolved conflict, and every blocking evidence \
+gap supplied below -- do not soften, omit, or resolve them on your own. A human reviewer must be \
+able to see every blocking issue in your output.
+- If human approval comments are supplied, reflect them in the relevant section rather than \
+ignoring them.
+- Where the supplied findings are insufficient to reach a conclusion for a section, say so \
+explicitly rather than filling the gap with a plausible-sounding guess."""
+
+
+@dataclass(frozen=True)
+class WorkflowSynthesisInput:
+    workflow_name: str
+    report_sections: tuple[str, ...]
+    stage_findings_text: str
+    review_findings_text: str
+    evidence_gaps_text: str
+    conflicts_text: str
+    approval_comments_text: str | None = None
+
+
+def build_workflow_synthesis_prompt(question: str, data: WorkflowSynthesisInput) -> RagPrompt:
+    """Build the prompt for a workflow's one bounded "Executive Synthesis" stage.
+
+    Operates strictly on already-completed stage output (`data`), never on
+    raw knowledge-base text -- same "nothing to invent from" property as
+    `build_synthesis_prompt`, extended with structured findings/evidence
+    gaps/conflicts/approval comments a plain advisor synthesis never sees.
+    """
+    structure = "Structure the final report using exactly these sections:\n" + "\n".join(data.report_sections)
+    system = build_system_prompt(_WORKFLOW_SYNTHESIS_PERSONA, structure, _WORKFLOW_SYNTHESIS_EXTRA_GUIDANCE)
+
+    parts = [f"Workflow: {data.workflow_name}", "", "Stage findings:", data.stage_findings_text]
+    if data.review_findings_text:
+        parts += ["", "Structured findings:", data.review_findings_text]
+    if data.evidence_gaps_text:
+        parts += ["", "Evidence gaps:", data.evidence_gaps_text]
+    if data.conflicts_text:
+        parts += ["", "Detected conflicts:", data.conflicts_text]
+    if data.approval_comments_text:
+        parts += ["", "Human approval comments:", data.approval_comments_text]
+    parts += ["", "Question:", question.strip()]
+
+    user = "\n".join(parts)
+    return RagPrompt(system=system, user=user, version=WORKFLOW_SYNTHESIS_PROMPT_VERSION)
