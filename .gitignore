@@ -14,3 +14,6 @@ data/processed/*.json
 vector_store/*.npy
 vector_store/*.jsonl
 vector_store/index_state.json
+
+# generated workflow execution state
+workflow_store/*.json
