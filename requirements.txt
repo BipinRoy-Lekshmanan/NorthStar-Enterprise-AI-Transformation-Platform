@@ -3,5 +3,5 @@ PyYAML>=6.0
 python-dotenv>=1.0
 numpy>=1.26
 
-# Optional: only required if EMBEDDING_PROVIDER=openai
+# Optional: only required if EMBEDDING_PROVIDER=openai and/or LLM_PROVIDER=openai
 # openai>=1.0
