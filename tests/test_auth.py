@@ -125,6 +125,16 @@ def test_api_settings_invalid_question_length_raises():
         ApiSettings.from_env(env={"API_MAX_QUESTION_LENGTH": "0"})
 
 
+def test_api_settings_rate_limit_default():
+    settings = ApiSettings.from_env(env={})
+    assert settings.rate_limit_per_minute == 120
+
+
+def test_api_settings_invalid_rate_limit_raises():
+    with pytest.raises(ConfigurationError, match="API_RATE_LIMIT_PER_MINUTE"):
+        ApiSettings.from_env(env={"API_RATE_LIMIT_PER_MINUTE": "0"})
+
+
 # -- AuthSettings -----------------------------------------------------------------------------
 
 

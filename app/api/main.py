@@ -15,9 +15,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
+from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
+from app.api.middleware.request_size_limit import RequestSizeLimitMiddleware
 from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, platform, query, workflows
 from app.api.version import API_PREFIX, APP_VERSION
 from app.audit.store import AuditStore
@@ -88,7 +91,23 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    api_settings = ApiSettings.from_env()
+
+    # Added in reverse-of-execution order (Starlette wraps middleware so the
+    # last one added runs first): CORS handles preflight OPTIONS before
+    # anything else; then the rate limiter rejects abusive clients before
+    # the body is even read; then the size limit; then request-id/timing.
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RequestSizeLimitMiddleware, max_bytes=api_settings.max_upload_bytes)
+    app.add_middleware(RateLimitMiddleware, requests_per_minute=api_settings.rate_limit_per_minute)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(api_settings.cors_allowed_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     register_exception_handlers(app)
 
     app.include_router(health.router, prefix=API_PREFIX)

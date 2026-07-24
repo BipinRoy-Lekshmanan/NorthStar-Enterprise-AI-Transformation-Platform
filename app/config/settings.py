@@ -61,6 +61,7 @@ DEFAULT_API_CORS_ORIGINS = "http://localhost:8501,http://127.0.0.1:8501"
 DEFAULT_API_MAX_QUESTION_LENGTH = 2000
 DEFAULT_API_MAX_UPLOAD_BYTES = 200_000
 DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 60.0
+DEFAULT_API_RATE_LIMIT_PER_MINUTE = 120
 
 DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
 
@@ -469,6 +470,7 @@ class ApiSettings:
     max_upload_bytes: int
     request_timeout_seconds: float
     audit_log_dir: Path
+    rate_limit_per_minute: int
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ApiSettings":
@@ -487,6 +489,9 @@ class ApiSettings:
                 env, "API_REQUEST_TIMEOUT_SECONDS", DEFAULT_API_REQUEST_TIMEOUT_SECONDS
             ),
             audit_log_dir=_resolve(env.get("AUDIT_LOG_DIR", DEFAULT_AUDIT_LOG_DIR)),
+            rate_limit_per_minute=_parse_int(
+                env, "API_RATE_LIMIT_PER_MINUTE", DEFAULT_API_RATE_LIMIT_PER_MINUTE
+            ),
         )
         settings.validate()
         return settings
@@ -515,6 +520,11 @@ class ApiSettings:
         if self.request_timeout_seconds <= 0:
             raise ConfigurationError(
                 f"API_REQUEST_TIMEOUT_SECONDS must be positive, got {self.request_timeout_seconds}."
+            )
+
+        if self.rate_limit_per_minute <= 0:
+            raise ConfigurationError(
+                f"API_RATE_LIMIT_PER_MINUTE must be a positive integer, got {self.rate_limit_per_minute}."
             )
 
 
