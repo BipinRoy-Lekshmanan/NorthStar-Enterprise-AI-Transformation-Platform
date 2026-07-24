@@ -17,7 +17,7 @@ from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware.request_context import RequestContextMiddleware
-from app.api.routes import auth, health, query
+from app.api.routes import advisors, auth, health, query
 from app.audit.store import AuditStore
 from app.auth.users import load_users
 from app.config.settings import ApiSettings, AuthSettings, RagSettings, RetrievalSettings, RouterSettings
@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(query.router, prefix=API_PREFIX)
+    app.include_router(advisors.router, prefix=API_PREFIX)
 
     return app
 

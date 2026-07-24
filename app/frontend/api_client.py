@@ -77,3 +77,17 @@ class ApiClient:
 
     def ask_query(self, **payload: Any) -> dict:
         return self._request("POST", "/api/v1/query", json=payload)
+
+    # -- advisors -----------------------------------------------------------------
+
+    def list_advisors(self) -> list[dict]:
+        return self._request("GET", "/api/v1/advisors")
+
+    def get_advisor(self, advisor_id: str) -> dict:
+        return self._request("GET", f"/api/v1/advisors/{advisor_id}")
+
+    def query_advisor(self, advisor_id: str, **payload: Any) -> dict:
+        return self._request("POST", f"/api/v1/advisors/{advisor_id}/query", json=payload)
+
+    def preview_routing(self, question: str) -> dict:
+        return self._request("POST", "/api/v1/advisors/route", json={"question": question})

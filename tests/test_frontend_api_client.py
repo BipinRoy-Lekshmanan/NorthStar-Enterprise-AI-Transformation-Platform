@@ -99,3 +99,60 @@ def test_malformed_error_body_falls_back_to_response_text(monkeypatch):
 def test_base_url_trailing_slash_is_stripped():
     client = ApiClient(base_url="http://test/")
     assert client.base_url == "http://test"
+
+
+def test_list_advisors_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://test/api/v1/advisors"
+        return httpx.Response(200, json=[{"advisor_id": "testing"}])
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.list_advisors() == [{"advisor_id": "testing"}]
+
+
+def test_get_advisor_calls_the_right_endpoint(monkeypatch):
+    def fake_request(method, url, **kwargs):
+        assert method == "GET"
+        assert url == "http://test/api/v1/advisors/testing"
+        return httpx.Response(200, json={"advisor_id": "testing"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    assert client.get_advisor("testing") == {"advisor_id": "testing"}
+
+
+def test_query_advisor_posts_to_the_right_endpoint(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"answer": "..."})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    client.query_advisor("testing", question="hi")
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://test/api/v1/advisors/testing/query"
+    assert captured["json"] == {"question": "hi"}
+
+
+def test_preview_routing_posts_question(monkeypatch):
+    captured = {}
+
+    def fake_request(method, url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return httpx.Response(200, json={"primary_advisor": "testing"})
+
+    monkeypatch.setattr("app.frontend.api_client.httpx.request", fake_request)
+    client = ApiClient(base_url="http://test")
+    result = client.preview_routing("What testing evidence is required?")
+
+    assert captured["url"] == "http://test/api/v1/advisors/route"
+    assert captured["json"] == {"question": "What testing evidence is required?"}
+    assert result == {"primary_advisor": "testing"}
