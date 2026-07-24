@@ -65,6 +65,13 @@ class RagService:
         needs raw retrieval results independent of citation/generation behavior."""
         return self._retriever
 
+    @property
+    def llm(self) -> LanguageModelProvider:
+        """Exposes the underlying `LanguageModelProvider` for tooling (e.g. the
+        advisor orchestrator's synthesis step) that needs the same already-
+        configured provider without constructing a second one."""
+        return self._llm
+
     def ask(
         self,
         question: str,
