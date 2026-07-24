@@ -6,6 +6,14 @@ were retrievable, whether citations were produced when expected, whether
 sufficient-context classification matches expectations, and whether
 required concepts appear in the answer text (best-effort substring
 match). Deterministic checks only -- no LLM-as-judge.
+
+`main()` also accepts `--category workflows`, which defers entirely to
+`app.evaluation.workflow_evaluator` (the Milestone 6 evaluation runner)
+so `python -m app.rag.evaluate --category workflows` and
+`python -m app.evaluation.workflow_evaluator` run the identical thing --
+one CLI entry point for both evaluation datasets, same reasoning
+`app.rag.index`/`app.rag.ask`/`app.rag.evaluate` already share one
+namespace instead of proliferating commands.
 """
 
 from __future__ import annotations
@@ -120,12 +128,35 @@ def main() -> None:
 
     from app.config.logging import configure_logging
 
-    parser = argparse.ArgumentParser(description="Run the Milestone 3 grounded-RAG evaluation dataset.")
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET_PATH, help="Path to the eval JSON file")
+    parser = argparse.ArgumentParser(description="Run a Northstar evaluation dataset.")
+    parser.add_argument(
+        "--category", choices=["rag", "workflows"], default="rag",
+        help="Which evaluation dataset to run: 'rag' (Milestone 3 grounded-RAG seed set, default) "
+             "or 'workflows' (Milestone 6 workflow seed set)",
+    )
+    parser.add_argument("--dataset", type=Path, default=None, help="Path to the eval JSON file (defaults per --category)")
     args = parser.parse_args()
 
     configure_logging()
-    cases = load_eval_cases(args.dataset)
+
+    if args.category == "workflows":
+        # Deferred import: rag_evaluator has no module-level dependency on
+        # app.workflows, only when --category workflows is actually chosen.
+        from app.evaluation.workflow_evaluator import (
+            DEFAULT_DATASET_PATH as WORKFLOW_DATASET_PATH,
+            load_eval_cases as load_workflow_eval_cases,
+            print_report as print_workflow_report,
+            run_evaluation as run_workflow_evaluation,
+        )
+        from app.workflows.engine import build_default_workflow_engine
+
+        cases = load_workflow_eval_cases(args.dataset or WORKFLOW_DATASET_PATH)
+        engine = build_default_workflow_engine()
+        results = run_workflow_evaluation(engine, cases)
+        print_workflow_report(results)
+        return
+
+    cases = load_eval_cases(args.dataset or DEFAULT_DATASET_PATH)
     service = build_default_rag_service()
     results = run_evaluation(service, cases)
     _print_report(results)

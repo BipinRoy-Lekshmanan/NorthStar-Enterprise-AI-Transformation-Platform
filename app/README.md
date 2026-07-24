@@ -42,7 +42,7 @@ Application source for the Northstar Enterprise AI Transformation Platform.
 | `rag/context_builder.py` | `ContextBuilder` — rank-preserving, dedup, size-bounded, decides sufficiency |
 | `rag/citation_engine.py` | `parse_citation_ids()` / `build_citations()` — only ids actually cited |
 | `rag/pipeline.py` | `RagService` — orchestrates the full grounded workflow, CLI: `python -m app.rag.ask "<question>"` (via `app/rag/ask.py`) |
-| `evaluation/rag_evaluator.py` | Seed-dataset evaluation runner, CLI: `python -m app.rag.evaluate` (via `app/rag/evaluate.py` alias) |
+| `evaluation/rag_evaluator.py` | Seed-dataset evaluation runner, CLI: `python -m app.rag.evaluate` (via `app/rag/evaluate.py` alias). `--category workflows` defers entirely to `evaluation/workflow_evaluator.py` (Milestone 6) so one CLI entry point reaches both evaluation datasets |
 | `rag/index.py`, `rag/evaluate.py` | Thin one-line aliases for `app.embeddings.indexer.main` / `app.evaluation.rag_evaluator.main` — real logic stays in its own layer; these just give all user-facing RAG commands one namespace (`app.rag.index` / `app.rag.ask` / `app.rag.evaluate`) |
 
 ## Implemented (Milestone 4)

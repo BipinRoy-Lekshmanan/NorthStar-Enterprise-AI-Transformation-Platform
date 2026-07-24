@@ -46,6 +46,7 @@ python -m pytest
 | `test_workflow_cli.py` | Formatting helpers directly (execution summary, stages, findings, JSON rendering, report extraction) plus full `main()` invocations for `list`/`describe`/`run`/`approve`, including error paths (unknown workflow, missing input file) |
 | `test_workflow_e2e.py` | One true end-to-end test per catalog workflow (all 5) against a fixture KB covering every advisor document, confirming each workflow's expected pause behavior, citation presence, and (for Production Readiness Review) the `INSUFFICIENT_EVIDENCE` recommendation |
 | `test_workflow_evaluator.py` | Real dataset loads with ≥10 cases covering all 5 workflows, a case passes when expectations match, fails when a recommendation or expected stage doesn't match, `run_evaluation()`/`_rate()` aggregate correctly |
+| `test_evaluate_cli.py` | `app.evaluation.rag_evaluator.main()`'s `--category` dispatch: `--category workflows` defers entirely to `app.evaluation.workflow_evaluator` and produces its output; the default (`rag`) still runs the Milestone 3 dataset unchanged |
 
 All Milestone 2-6 tests use `LocalHashingEmbeddingProvider` and
 `FakeModelProvider` — no network calls, no API key required, same

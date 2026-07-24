@@ -309,8 +309,8 @@ total duration. Not shown by default to keep normal output readable.
 python -m pytest
 ```
 
-317 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
-Milestone 4 + 32 from Milestone 5 + 103 from Milestone 6, all
+319 tests total (69 from Milestones 1–2 + 58 from Milestone 3 + 53 from
+Milestone 4 + 32 from Milestone 5 + 105 from Milestone 6, all
 unchanged/additive). All Milestone 3 tests use `FakeModelProvider`;
 `OpenAIModelProvider` is tested by injecting a fake `openai` module into
 `sys.modules`, exercising
@@ -954,13 +954,16 @@ conflict detection (literal-string, deterministic), the synthesis stage
 approve/reject/request-changes/cancel lifecycle and dependency/failure
 handling, `ReviewFinding` severity/status validation, the CLI's
 formatting helpers and `main()` end-to-end, one true end-to-end test per
-workflow (all 5), and the evaluation harness itself. 317 tests total
-(214 from Milestones 1–5 + 103 from Milestone 6).
+workflow (all 5), the evaluation harness itself, and the `--category`
+dispatch below. 319 tests total (214 from Milestones 1–5 + 105 from
+Milestone 6).
 
 ### Evaluation
 
 ```bash
 python -m app.evaluation.workflow_evaluator
+# equivalent, same one-namespace convention as app.rag.index/ask/evaluate:
+python -m app.rag.evaluate --category workflows
 ```
 
 10 seed cases (`data/evaluation_sets/milestone6_workflow_eval.json`,
@@ -970,6 +973,12 @@ checkpoint accuracy, bounded-recommendation accuracy, citation presence,
 and conflict detection — deterministic checks only, no LLM-as-judge,
 same philosophy as `app.evaluation.rag_evaluator`. Confirmed: 10/10
 passing.
+
+`app.rag.evaluate`'s `--category` flag (`rag`, the default, or
+`workflows`) is what makes one CLI entry point reach both evaluation
+datasets — `--category workflows` defers entirely to
+`app.evaluation.workflow_evaluator`'s own functions, so the two
+invocations above produce identical output.
 
 ### Limitations
 

@@ -206,7 +206,7 @@ def _rate(results: list[WorkflowEvalCaseResult], check_name: str) -> float:
     return sum(1 for result in results if result.checks.get(check_name)) / total
 
 
-def _print_report(results: list[WorkflowEvalCaseResult]) -> None:
+def print_report(results: list[WorkflowEvalCaseResult]) -> None:
     passed = sum(1 for result in results if result.passed)
     print(f"\nMilestone 6 workflow evaluation: {passed}/{len(results)} case(s) passed\n")
     for result in results:
@@ -245,7 +245,7 @@ def main() -> None:
     cases = load_eval_cases(args.dataset)
     engine = build_default_workflow_engine()
     results = run_evaluation(engine, cases)
-    _print_report(results)
+    print_report(results)
 
 
 if __name__ == "__main__":
