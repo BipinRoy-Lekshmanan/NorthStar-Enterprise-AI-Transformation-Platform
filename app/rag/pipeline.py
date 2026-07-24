@@ -71,6 +71,8 @@ class RagService:
         *,
         top_k: int | None = None,
         filters: dict[str, str] | None = None,
+        system_prompt: str | None = None,
+        prompt_version: str | None = None,
         on_context_built: Callable[[ContextBuildResult], None] | None = None,
         on_prompt_built: Callable[[RagPrompt], None] | None = None,
     ) -> RagAnswer:
@@ -100,7 +102,9 @@ class RagService:
             )
             return answer
 
-        prompt = build_prompt(question, context_result.blocks)
+        prompt = build_prompt(
+            question, context_result.blocks, system_prompt=system_prompt, prompt_version=prompt_version
+        )
         if on_prompt_built is not None:
             on_prompt_built(prompt)
 

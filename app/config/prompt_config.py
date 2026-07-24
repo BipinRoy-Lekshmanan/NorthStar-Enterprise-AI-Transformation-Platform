@@ -15,11 +15,11 @@ from app.rag.context_builder import ContextBlock
 
 PROMPT_VERSION = "rag-system-v1"
 
-SYSTEM_PROMPT = """You are the Northstar Enterprise Knowledge Assistant, answering questions \
+_GENERIC_PERSONA = """You are the Northstar Enterprise Knowledge Assistant, answering questions \
 about Northstar Lending Corporation using only the enterprise reference material supplied \
-to you below as numbered sources ([S1], [S2], ...).
+to you below as numbered sources ([S1], [S2], ...)."""
 
-Ground rules:
+GROUNDING_GUARDRAILS = """Ground rules:
 - Answer primarily and only from the supplied Northstar context. Do not use outside knowledge \
 about lending, financial services, or general industry practice to fill gaps -- if the context \
 does not cover something, say so explicitly rather than inferring it.
@@ -45,14 +45,32 @@ the documented process requires, and note that a human owner must make that dete
 recommendations, not as actions you are taking.
 - Be concise and directly useful. Do not pad the answer with generic AI filler, and do not list \
 every retrieved source just because it was retrieved -- only reference sources that actually \
-support a claim you're making.
+support a claim you're making."""
 
-Prefer this structure when it fits the question (adapt the headings if the question calls for \
+_GENERIC_STRUCTURE = """Prefer this structure when it fits the question (adapt the headings if the question calls for \
 something simpler):
 Answer
 Recommended Actions
-Risks or Considerations
-"""
+Risks or Considerations"""
+
+
+def build_system_prompt(persona: str, structure_guidance: str, extra_guidance: str | None = None) -> str:
+    """Compose a system prompt from a persona + the shared grounding guardrails
+    + (optionally) domain-specific extra guidance + a response structure.
+
+    Every advisor (see `app/agents/`) gets the exact same
+    `GROUNDING_GUARDRAILS` -- they are never re-authored per advisor, so a
+    new advisor can't accidentally ship without them. Used both for the
+    generic `SYSTEM_PROMPT` below and for each domain advisor's prompt.
+    """
+    parts = [persona.strip(), "", GROUNDING_GUARDRAILS.strip()]
+    if extra_guidance:
+        parts += ["", extra_guidance.strip()]
+    parts += ["", structure_guidance.strip()]
+    return "\n".join(parts) + "\n"
+
+
+SYSTEM_PROMPT = build_system_prompt(_GENERIC_PERSONA, _GENERIC_STRUCTURE)
 
 
 def build_source_block(block: ContextBlock) -> str:
@@ -89,9 +107,23 @@ class RagPrompt:
     version: str
 
 
-def build_prompt(question: str, context_blocks: list[ContextBlock]) -> RagPrompt:
+def build_prompt(
+    question: str,
+    context_blocks: list[ContextBlock],
+    *,
+    system_prompt: str | None = None,
+    prompt_version: str | None = None,
+) -> RagPrompt:
+    """Build the final prompt sent to the model.
+
+    `system_prompt`/`prompt_version` let a caller (currently only
+    `app.agents.base_agent.Advisor`) substitute a domain-specialized
+    system prompt without touching this function's question/context
+    rendering -- omitting both reproduces exactly today's generic
+    assistant behavior.
+    """
     return RagPrompt(
-        system=SYSTEM_PROMPT,
+        system=system_prompt or SYSTEM_PROMPT,
         user=build_user_prompt(question, context_blocks),
-        version=PROMPT_VERSION,
+        version=prompt_version or PROMPT_VERSION,
     )
