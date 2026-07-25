@@ -25,6 +25,7 @@ from app.models.response import RagAnswer
 from app.models.workflow import WorkflowStageResult
 from app.rag.pipeline import RagService
 from app.services.llm_service import ModelProviderError
+from app.telemetry.cost_tracker import CostTracker
 from app.telemetry.metrics import (
     advisor_duration_seconds,
     advisor_executions_total,
@@ -97,6 +98,26 @@ def _record_rag_metrics(answer: RagAnswer, *, mode: str, advisor_id: str) -> Non
         )
 
 
+def _record_usage(
+    answer: RagAnswer, *, cost_tracker: CostTracker | None, actor: str | None, request_id: str | None,
+) -> None:
+    """No-op when no tracker is configured -- cost tracking is purely
+    additive, every pre-existing caller that doesn't pass one is
+    unaffected. Also a no-op when the answer carries no provider/model
+    (the insufficient-context short-circuit path never calls the LLM at
+    all, so there's nothing to record)."""
+    if cost_tracker is None:
+        return
+    diagnostics = answer.diagnostics
+    if not diagnostics.model_provider or not diagnostics.model_name:
+        return
+    cost_tracker.record_usage(
+        provider=diagnostics.model_provider, model=diagnostics.model_name, operation="llm_generate",
+        input_tokens=diagnostics.input_tokens, output_tokens=diagnostics.output_tokens,
+        actor=actor, request_id=request_id,
+    )
+
+
 _DEGRADED_ANSWER_NOTICE = (
     "A generated answer is currently unavailable because the language model provider could not be "
     "reached. The most relevant excerpts from the Northstar knowledge base are shown below -- review "
@@ -141,9 +162,18 @@ def ask_manual(
     include_diagnostics: bool = False,
     include_context: bool = False,
     audit: AuditContext | None = None,
+    cost_tracker: CostTracker | None = None,
+    actor: str | None = None,
 ) -> QueryResult:
     """Ask a specific advisor by id. Raises `UnknownAdvisorError` (mapped
-    to 404 by `app.api.errors`) for an unrecognized `advisor_id`."""
+    to 404 by `app.api.errors`) for an unrecognized `advisor_id`.
+    Raises `BudgetExceededError` (mapped to 429) if `cost_tracker` is
+    configured with a daily budget that's already been reached -- checked
+    before the call, so the call that would tip things over never
+    happens."""
+    if cost_tracker is not None:
+        cost_tracker.enforce_budget()
+
     advisor = get_advisor(advisor_id)
 
     captured_context: list[RetrievedChunk] = []
@@ -173,6 +203,7 @@ def ask_manual(
 
     advisor_executions_total.labels(advisor_id=advisor_id).inc()
     _record_rag_metrics(answer, mode="manual", advisor_id=advisor_id)
+    _record_usage(answer, cost_tracker=cost_tracker, actor=actor, request_id=audit.request_id if audit else None)
 
     record_from_context(
         audit, action="grounded_question_asked", resource_type="advisor", resource_id=advisor_id,
@@ -201,6 +232,8 @@ def ask_auto(
     include_diagnostics: bool = False,
     include_context: bool = False,
     audit: AuditContext | None = None,
+    cost_tracker: CostTracker | None = None,
+    actor: str | None = None,
 ) -> QueryResult:
     """Ask via deterministic automatic advisor routing + bounded
     multi-advisor synthesis (Milestone 5).
@@ -210,6 +243,9 @@ def ask_auto(
     question, with no filter or context-capture hook, so both become a
     visible warning here rather than being silently dropped.
     """
+    if cost_tracker is not None:
+        cost_tracker.enforce_budget()
+
     warnings: list[str] = []
     if filters.as_dict():
         warnings.append("Filters are only applied to manual advisor selection; ignored for automatic routing.")
@@ -241,6 +277,10 @@ def ask_auto(
     ).inc()
     routing_confidence.observe(response.routing.confidence)
     _record_rag_metrics(response.primary_answer, mode="auto", advisor_id=response.routing.primary_advisor)
+    _record_usage(
+        response.primary_answer, cost_tracker=cost_tracker, actor=actor,
+        request_id=audit.request_id if audit else None,
+    )
 
     conflicts = _detect_conflicts_for_response(response) if response.supporting_answers else []
 

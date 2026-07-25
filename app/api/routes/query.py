@@ -15,6 +15,7 @@ from fastapi.responses import PlainTextResponse
 
 from app.api.dependencies.services import (
     get_audit_store,
+    get_cost_tracker,
     get_ingestion_settings,
     get_rag_service,
     get_rag_settings,
@@ -32,6 +33,7 @@ from app.config.settings import IngestionSettings, RagSettings, RouterSettings
 from app.export.common import build_query_export_envelope
 from app.export.markdown_renderer import render_query_answer_markdown
 from app.rag.pipeline import RagService
+from app.telemetry.cost_tracker import CostTracker
 
 router = APIRouter()
 
@@ -48,6 +50,7 @@ def ask_question(
     router_settings: RouterSettings = Depends(get_router_settings),
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
+    cost_tracker: CostTracker = Depends(get_cost_tracker),
     user: User = Depends(require_role(Role.VIEWER)),
 ) -> QueryResponse:
     filters = QueryFilters(
@@ -63,14 +66,14 @@ def ask_question(
             max_supporting_advisors=body.max_supporting_advisors,
             include_diagnostics=body.include_diagnostics,
             include_context=body.include_retrieved_context,
-            audit=audit,
+            audit=audit, cost_tracker=cost_tracker, actor=user.username,
         )
     else:
         result = ask_manual(
             service, body.question, body.advisor, filters,
             include_diagnostics=body.include_diagnostics,
             include_context=body.include_retrieved_context,
-            audit=audit,
+            audit=audit, cost_tracker=cost_tracker, actor=user.username,
         )
 
     response = build_query_response(result, request_id)

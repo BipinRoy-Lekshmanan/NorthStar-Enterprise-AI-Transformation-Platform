@@ -266,3 +266,36 @@ def test_invalid_format_value_returns_422(client):
         headers=AUTH_HEADERS,
     )
     assert response.status_code == 422
+
+
+def test_query_returns_429_once_the_daily_budget_is_exceeded(users_file, tmp_path, monkeypatch):
+    """DAILY_BUDGET_USD is read once at lifespan startup, so it must be
+    set before create_app()/TestClient(...) run. FakeModelProvider has
+    no known price (app.telemetry.token_usage has no 'fake' entry), so
+    the budget-exceeding usage is seeded directly on the real
+    CostTracker singleton rather than relying on a real query to accrue
+    cost."""
+    monkeypatch.setenv("DAILY_BUDGET_USD", "0.01")
+
+    kb_root = tmp_path / "kb_root"
+    kb_root.mkdir()
+    service = _build_service(kb_root)
+    monkeypatch.setenv("KNOWLEDGE_BASE_DIRS", str(kb_root / "kb"))
+
+    app = create_app()
+    app.dependency_overrides[get_rag_service] = lambda: service
+    app.dependency_overrides[get_rag_settings] = lambda: _rag_settings()
+    app.dependency_overrides[get_router_settings] = lambda: _router_settings()
+
+    with TestClient(app) as budget_client:
+        budget_client.app.state.cost_tracker.record_usage(
+            provider="openai", model="gpt-4o-mini", operation="llm_generate", input_tokens=1_000_000,
+        )
+
+        response = budget_client.post(
+            "/api/v1/query", json={"question": "What testing evidence is required?", "advisor": "testing"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "BUDGET_EXCEEDED"

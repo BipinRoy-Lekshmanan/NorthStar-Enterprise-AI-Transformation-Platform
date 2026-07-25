@@ -29,6 +29,7 @@ from app.operations.background import OperationRunner
 from app.rag.pipeline import RagService
 from app.resilience.concurrency import LockRegistry
 from app.resilience.idempotency import IdempotencyStore
+from app.telemetry.cost_tracker import CostTracker
 from app.workflows.engine import WorkflowEngine
 
 
@@ -66,6 +67,10 @@ def get_operation_runner(request: Request) -> OperationRunner:
 
 def get_feature_flags(request: Request) -> FeatureFlagSettings:
     return request.app.state.feature_flags
+
+
+def get_cost_tracker(request: Request) -> CostTracker:
+    return request.app.state.cost_tracker
 
 
 def get_audit_store(request: Request) -> AuditStore:

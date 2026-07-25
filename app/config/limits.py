@@ -34,6 +34,8 @@ class CapacityLimits:
     chunk_size: int
     chunk_overlap: int
     workflow_max_stages: int
+    daily_budget_usd: float | None
+    budget_warning_ratio: float
 
     @classmethod
     def from_settings_bundle(cls, bundle: SettingsBundle) -> "CapacityLimits":
@@ -53,4 +55,6 @@ class CapacityLimits:
             chunk_size=bundle.ingestion.chunk_size,
             chunk_overlap=bundle.ingestion.chunk_overlap,
             workflow_max_stages=bundle.workflow.workflow_max_stages,
+            daily_budget_usd=bundle.cost.daily_budget_usd,
+            budget_warning_ratio=bundle.cost.budget_warning_ratio,
         )

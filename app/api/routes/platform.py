@@ -10,14 +10,26 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies.services import get_audit_store, get_rag_service, get_started_at
-from app.api.schemas.platform import AuditEventOut, HealthDetailOut, PlatformInfoOut, build_audit_event_out
-from app.api.services.platform_service import get_health_detail, get_platform_info, list_recent_audit_events
+from app.api.dependencies.services import get_audit_store, get_cost_tracker, get_rag_service, get_started_at
+from app.api.schemas.platform import (
+    AuditEventOut,
+    HealthDetailOut,
+    PlatformInfoOut,
+    UsageSummaryOut,
+    build_audit_event_out,
+)
+from app.api.services.platform_service import (
+    get_health_detail,
+    get_platform_info,
+    get_usage_summary,
+    list_recent_audit_events,
+)
 from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
 from app.rag.pipeline import RagService
+from app.telemetry.cost_tracker import CostTracker
 
 router = APIRouter()
 
@@ -40,6 +52,16 @@ def health_detail_route(
 )
 def platform_info_route(_user: User = Depends(require_role(Role.VIEWER))) -> PlatformInfoOut:
     return PlatformInfoOut(**get_platform_info())
+
+
+@router.get(
+    "/platform/usage", summary="Today's usage cost and budget status", tags=["Platform"],
+    response_model=UsageSummaryOut,
+)
+def usage_summary_route(
+    cost_tracker: CostTracker = Depends(get_cost_tracker), _user: User = Depends(require_role(Role.VIEWER)),
+) -> UsageSummaryOut:
+    return UsageSummaryOut(**get_usage_summary(cost_tracker))
 
 
 @router.get(

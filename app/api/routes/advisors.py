@@ -9,7 +9,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.dependencies.services import get_audit_store, get_ingestion_settings, get_rag_service, get_router_settings
+from app.api.dependencies.services import (
+    get_audit_store,
+    get_cost_tracker,
+    get_ingestion_settings,
+    get_rag_service,
+    get_router_settings,
+)
 from app.api.schemas.advisors import (
     AdvisorOut,
     AdvisorQueryRequest,
@@ -28,6 +34,7 @@ from app.auth.roles import Role
 from app.auth.users import User
 from app.config.settings import IngestionSettings, RouterSettings
 from app.rag.pipeline import RagService
+from app.telemetry.cost_tracker import CostTracker
 
 router = APIRouter()
 
@@ -55,6 +62,7 @@ def query_advisor_route(
     service: RagService = Depends(get_rag_service),
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
+    cost_tracker: CostTracker = Depends(get_cost_tracker),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> QueryResponse:
     filters = QueryFilters(document_id=body.document_id, source_file=body.source_file)
@@ -64,6 +72,7 @@ def query_advisor_route(
     result = ask_manual(
         service, body.question, advisor_id, filters,
         include_diagnostics=body.include_diagnostics, include_context=body.include_retrieved_context, audit=audit,
+        cost_tracker=cost_tracker, actor=user.username,
     )
     response = build_query_response(result, request_id)
     restricted_ids = restricted_ids_for_role(user.role, ingestion_settings)

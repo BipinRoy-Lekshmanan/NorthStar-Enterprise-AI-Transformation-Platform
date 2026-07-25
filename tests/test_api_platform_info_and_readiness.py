@@ -128,3 +128,25 @@ def test_platform_info_returns_version_environment_prompt_and_schema(client):
     # reachable, but in this repo's real checkout it resolves to a real
     # revision id -- either way the key must always be present.
     assert "schema_version" in body
+
+
+def test_usage_requires_authentication(client):
+    response = client.get("/api/v1/platform/usage")
+    assert response.status_code == 401
+
+
+def test_usage_reports_zero_spend_and_no_budget_by_default(client):
+    response = client.get("/api/v1/platform/usage", headers=VIEWER_HEADERS)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["spent_usd"] == 0.0
+    assert body["budget_usd"] is None
+    assert body["exceeded"] is False
+
+
+def test_usage_reflects_recorded_spend(client):
+    client.app.state.cost_tracker.record_usage(
+        provider="openai", model="gpt-4o-mini", operation="llm_generate", input_tokens=1_000_000,
+    )
+    response = client.get("/api/v1/platform/usage", headers=VIEWER_HEADERS)
+    assert response.json()["spent_usd"] == pytest.approx(0.15)

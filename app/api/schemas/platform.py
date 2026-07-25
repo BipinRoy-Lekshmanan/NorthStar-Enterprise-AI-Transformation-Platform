@@ -31,6 +31,14 @@ class ReadinessOut(BaseModel):
     checks: dict[str, str]
 
 
+class UsageSummaryOut(BaseModel):
+    spent_usd: float
+    budget_usd: float | None
+    warning_threshold_usd: float | None
+    warning: bool
+    exceeded: bool
+
+
 class AuditEventOut(BaseModel):
     timestamp: datetime
     request_id: str | None

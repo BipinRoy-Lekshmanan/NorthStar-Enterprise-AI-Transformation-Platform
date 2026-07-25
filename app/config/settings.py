@@ -89,6 +89,11 @@ DEFAULT_EVALUATION_RUNS_DIR = "evaluation_runs"
 
 DEFAULT_TRACING_ENABLED = False
 
+# Milestone 8: cost observability. No default budget (None -- unlimited)
+# unless a deployment opts in via DAILY_BUDGET_USD; 0.8 means "warn at
+# 80% of budget spent."
+DEFAULT_BUDGET_WARNING_RATIO = 0.8
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -663,6 +668,45 @@ class TelemetrySettings:
 
     def validate(self) -> None:
         pass  # nothing to reject: a bare bool + an optional URL string, both already parsed safely
+
+
+@dataclass(frozen=True)
+class CostSettings:
+    """Validated configuration for cost observability + usage budgets
+    (Milestone 8). `daily_budget_usd=None` (the default) means
+    unlimited -- no deployment is budget-limited unless it opts in."""
+
+    daily_budget_usd: float | None
+    budget_warning_ratio: float
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "CostSettings":
+        env = env if env is not None else os.environ
+        raw_budget = env.get("DAILY_BUDGET_USD", "").strip()
+        daily_budget_usd = None
+        if raw_budget:
+            try:
+                daily_budget_usd = float(raw_budget)
+            except ValueError as exc:
+                raise ConfigurationError(f"DAILY_BUDGET_USD must be a number, got '{raw_budget}'.") from exc
+
+        settings = cls(
+            daily_budget_usd=daily_budget_usd,
+            budget_warning_ratio=_parse_float(env, "BUDGET_WARNING_RATIO", DEFAULT_BUDGET_WARNING_RATIO),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        if self.daily_budget_usd is not None and self.daily_budget_usd <= 0:
+            raise ConfigurationError(
+                f"DAILY_BUDGET_USD must be a positive number, got {self.daily_budget_usd}."
+            )
+        if not (0.0 < self.budget_warning_ratio <= 1.0):
+            raise ConfigurationError(
+                f"BUDGET_WARNING_RATIO must be between 0 (exclusive) and 1 (inclusive), "
+                f"got {self.budget_warning_ratio}."
+            )
 
 
 @dataclass(frozen=True)

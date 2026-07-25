@@ -29,6 +29,7 @@ from app.evaluation.run_store import EvaluationRunStoreError
 from app.operations.background import UnknownOperationError
 from app.rag.pipeline import QuestionValidationError
 from app.services.llm_service import ModelProviderError
+from app.telemetry.cost_tracker import BudgetExceededError
 from app.workflows.definitions import WorkflowDefinitionError
 from app.workflows.engine import WorkflowEngineError
 from app.workflows.registry import UnknownWorkflowError
@@ -64,6 +65,10 @@ class ErrorCode(str, Enum):
     # (idempotency keys must be unique per distinct request), not a
     # retry.
     IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED"
+    # Milestone 8: the configured daily cost budget has already been
+    # reached -- the call that would have tipped things over further
+    # never happened.
+    BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
 
 
 class ApiError(Exception):
@@ -98,6 +103,7 @@ _DOMAIN_EXCEPTION_MAP: dict[type[Exception], tuple[int, ErrorCode]] = {
     EmbeddingProviderError: (502, ErrorCode.EMBEDDING_PROVIDER_ERROR),
     VectorStoreError: (500, ErrorCode.VECTOR_STORE_ERROR),
     ConfigurationError: (500, ErrorCode.CONFIGURATION_ERROR),
+    BudgetExceededError: (429, ErrorCode.BUDGET_EXCEEDED),
 }
 
 

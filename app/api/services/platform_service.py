@@ -20,6 +20,7 @@ from app.config.environment import current_environment
 from app.config.prompt_config import PROMPT_VERSION
 from app.models.query import RetrievalQuery
 from app.rag.pipeline import RagService
+from app.telemetry.cost_tracker import CostTracker
 from app.workflows.registry import list_workflows
 
 _HEALTH_CHECK_QUERY = "platform health check"
@@ -74,6 +75,17 @@ def get_platform_info() -> dict:
         "environment": current_environment().value,
         "prompt_version": PROMPT_VERSION,
         "schema_version": _schema_head_revision(),
+    }
+
+
+def get_usage_summary(cost_tracker: CostTracker) -> dict:
+    status = cost_tracker.check_budget()
+    return {
+        "spent_usd": status.spent_usd,
+        "budget_usd": status.budget_usd,
+        "warning_threshold_usd": status.warning_threshold_usd,
+        "warning": status.warning,
+        "exceeded": status.exceeded,
     }
 
 

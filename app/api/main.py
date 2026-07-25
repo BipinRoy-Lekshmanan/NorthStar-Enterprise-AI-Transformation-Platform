@@ -44,6 +44,7 @@ from app.config.feature_flags import FeatureFlagSettings
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
+    CostSettings,
     DatabaseSettings,
     EvaluationSettings,
     IngestionSettings,
@@ -59,6 +60,7 @@ from app.operations.background import OperationRunner
 from app.rag.pipeline import build_default_rag_service
 from app.resilience.concurrency import LockRegistry
 from app.resilience.idempotency import IdempotencyStore
+from app.telemetry.cost_tracker import CostTracker
 from app.telemetry.tracing import configure_tracing
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
@@ -84,6 +86,12 @@ async def lifespan(app: FastAPI):
     app.state.idempotency_store = IdempotencyStore(db_session_factory)
     app.state.audit_store = AuditStore(db_session_factory)
     app.state.operation_runner = OperationRunner(db_session_factory)
+
+    cost_settings = CostSettings.from_env()
+    app.state.cost_tracker = CostTracker(
+        db_session_factory, daily_budget_usd=cost_settings.daily_budget_usd,
+        warning_ratio=cost_settings.budget_warning_ratio,
+    )
 
     telemetry_settings = TelemetrySettings.from_env()
     configure_tracing(

@@ -22,6 +22,7 @@ from app.config.environment import Environment, current_environment
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
+    CostSettings,
     DatabaseSettings,
     EvaluationSettings,
     IngestionSettings,
@@ -49,6 +50,7 @@ class SettingsBundle:
     auth: AuthSettings
     evaluation: EvaluationSettings
     database: DatabaseSettings
+    cost: CostSettings
 
 
 def load_all_settings(env: Mapping[str, str] | None = None) -> SettingsBundle:
@@ -67,6 +69,7 @@ def load_all_settings(env: Mapping[str, str] | None = None) -> SettingsBundle:
         auth=AuthSettings.from_env(env),
         evaluation=EvaluationSettings.from_env(env),
         database=DatabaseSettings.from_env(env),
+        cost=CostSettings.from_env(env),
     )
 
 
