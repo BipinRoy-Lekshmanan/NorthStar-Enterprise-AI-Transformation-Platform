@@ -34,6 +34,7 @@ from app.telemetry.metrics import (
     routing_confidence,
     routing_decisions_total,
 )
+from app.telemetry.tracing import traced_span
 from app.workflows.conflict_detection import detect_conflicts
 
 
@@ -114,7 +115,10 @@ def ask_manual(
                 RetrievedChunk(source_id=block.source_id, text=block.chunk.text, score=block.score)
             )
 
-    with advisor_duration_seconds.labels(advisor_id=advisor_id).time():
+    with (
+        traced_span("advisor.ask", advisor_id=advisor_id, mode="manual"),
+        advisor_duration_seconds.labels(advisor_id=advisor_id).time(),
+    ):
         answer = advisor.ask(
             service, question, filters=filters.as_dict(),
             on_context_built=_capture if include_context else None,
@@ -171,7 +175,8 @@ def ask_auto(
     router = AdvisorRouter(service.retriever, list_advisors(), settings)
     orchestrator = AdvisorOrchestrator(service, router, service.llm, rag_settings)
 
-    response = orchestrator.ask(question)
+    with traced_span("advisor.ask", mode="auto"):
+        response = orchestrator.ask(question)
     warnings.extend(response.warnings)
 
     routing_decisions_total.labels(

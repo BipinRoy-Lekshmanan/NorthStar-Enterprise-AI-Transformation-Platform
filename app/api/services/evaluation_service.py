@@ -20,6 +20,7 @@ from app.evaluation.run_models import EvaluationRun
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
 from app.telemetry.metrics import evaluation_duration_seconds, evaluation_pass_rate, evaluation_runs_total
+from app.telemetry.tracing import traced_span
 from app.workflows.engine import WorkflowEngine
 
 
@@ -78,10 +79,11 @@ def run_and_save_evaluation(
     store: EvaluationRunStore, category: str, *, service: RagService | None = None,
     engine: WorkflowEngine | None = None, audit: AuditContext | None = None,
 ) -> EvaluationRun:
-    if category == "workflows":
-        run = run_workflow_evaluation(engine)
-    else:
-        run = run_rag_evaluation(service)
+    with traced_span("evaluation.run", category=category):
+        if category == "workflows":
+            run = run_workflow_evaluation(engine)
+        else:
+            run = run_rag_evaluation(service)
     store.save(run)
 
     evaluation_runs_total.labels(category=run.category).inc()

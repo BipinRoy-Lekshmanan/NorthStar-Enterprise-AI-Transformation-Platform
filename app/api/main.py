@@ -26,6 +26,7 @@ from app.api.routes import advisors, approvals, auth, evaluation, health, knowle
 from app.api.version import API_PREFIX, APP_VERSION
 from app.audit.store import AuditStore
 from app.auth.users import load_users
+from app.config.environment import current_environment
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
@@ -34,10 +35,12 @@ from app.config.settings import (
     RagSettings,
     RetrievalSettings,
     RouterSettings,
+    TelemetrySettings,
     WorkflowSettings,
 )
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import build_default_rag_service
+from app.telemetry.tracing import configure_tracing
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
 
@@ -50,6 +53,13 @@ async def lifespan(app: FastAPI):
     users file is missing/malformed. More singletons (`WorkflowEngine`,
     stores) are added here in later steps."""
     app.state.started_at = datetime.now(timezone.utc)
+
+    telemetry_settings = TelemetrySettings.from_env()
+    configure_tracing(
+        enabled=telemetry_settings.tracing_enabled,
+        environment=current_environment().value,
+        otlp_endpoint=telemetry_settings.otlp_endpoint,
+    )
 
     auth_settings = AuthSettings.from_env()
     app.state.users = load_users(auth_settings.users_file)

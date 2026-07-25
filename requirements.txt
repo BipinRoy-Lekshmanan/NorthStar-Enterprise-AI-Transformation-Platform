@@ -12,6 +12,9 @@ python-multipart>=0.0.9
 
 # Milestone 8: production hardening (observability, persistence, resilience)
 prometheus-client>=0.20
+opentelemetry-api>=1.24
+opentelemetry-sdk>=1.24
+opentelemetry-exporter-otlp-proto-http>=1.24
 
 # Optional: only required if EMBEDDING_PROVIDER=openai and/or LLM_PROVIDER=openai
 # openai>=1.0

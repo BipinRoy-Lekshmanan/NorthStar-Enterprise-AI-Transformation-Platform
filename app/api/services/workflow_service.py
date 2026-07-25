@@ -30,6 +30,7 @@ from app.telemetry.metrics import (
     workflows_failed_total,
     workflows_started_total,
 )
+from app.telemetry.tracing import traced_span
 from app.workflows.definitions import WorkflowDefinition
 from app.workflows.engine import WorkflowEngine
 from app.workflows.registry import get_workflow, list_workflows
@@ -130,7 +131,8 @@ def execute_workflow(
     engine: WorkflowEngine, workflow_id: str, inputs: dict, *, audit: AuditContext | None = None,
 ) -> WorkflowExecution:
     workflows_started_total.labels(workflow_id=workflow_id).inc()
-    execution = engine.run(workflow_id, inputs)
+    with traced_span("workflow.execute", workflow_id=workflow_id):
+        execution = engine.run(workflow_id, inputs)
     finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_executed", resource_type="workflow_execution", resource_id=execution.execution_id,

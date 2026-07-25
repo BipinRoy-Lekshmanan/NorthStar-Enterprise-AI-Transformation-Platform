@@ -70,6 +70,8 @@ DEFAULT_AUDIT_LOG_DIR = "audit_log"
 
 DEFAULT_EVALUATION_RUNS_DIR = "evaluation_runs"
 
+DEFAULT_TRACING_ENABLED = False
+
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_EMBEDDING_PROVIDERS = {"local", "openai"}
 VALID_LLM_PROVIDERS = {"fake", "openai"}
@@ -578,6 +580,33 @@ class EvaluationSettings:
         """Fail fast with a clear message when configuration cannot support evaluation run persistence."""
         if not str(self.evaluation_runs_dir).strip():
             raise ConfigurationError("EVALUATION_RUNS_DIR must not be empty.")
+
+
+@dataclass(frozen=True)
+class TelemetrySettings:
+    """Validated configuration for optional OpenTelemetry tracing (Milestone 8).
+
+    Disabled by default everywhere -- `app.telemetry.tracing.traced_span()`
+    is a no-op unless `configure_tracing()` was explicitly told to enable
+    it. No prompt or document content is ever placed in a span; only
+    provider/model names, token counts, and status.
+    """
+
+    tracing_enabled: bool
+    otlp_endpoint: str | None
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "TelemetrySettings":
+        env = env if env is not None else os.environ
+        settings = cls(
+            tracing_enabled=_parse_bool(env, "TRACING_ENABLED", DEFAULT_TRACING_ENABLED),
+            otlp_endpoint=env.get("OTLP_ENDPOINT") or None,
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        pass  # nothing to reject: a bare bool + an optional URL string, both already parsed safely
 
 
 def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
