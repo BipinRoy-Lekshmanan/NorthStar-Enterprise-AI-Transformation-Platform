@@ -20,6 +20,16 @@ from app.api.errors import ApiError, ErrorCode
 from app.audit.logger import AuditContext, record_from_context
 from app.config.settings import PROJECT_ROOT
 from app.models.workflow import EvidenceGap, ReviewFinding, WorkflowExecution
+from app.telemetry.metrics import (
+    workflow_conflicts_total,
+    workflow_evidence_gaps_total,
+    workflow_findings_total,
+    workflow_stage_duration_seconds,
+    workflows_cancelled_total,
+    workflows_completed_total,
+    workflows_failed_total,
+    workflows_started_total,
+)
 from app.workflows.definitions import WorkflowDefinition
 from app.workflows.engine import WorkflowEngine
 from app.workflows.registry import get_workflow, list_workflows
@@ -80,10 +90,48 @@ def list_workflow_examples(workflow_id: str) -> list[WorkflowExample]:
     return examples
 
 
+def finalize_workflow_metrics(execution: WorkflowExecution) -> None:
+    """Records stage-duration/findings/evidence-gap/conflict/lifecycle
+    metrics exactly once per execution, the moment it reaches a terminal
+    status -- a given execution can only transition into a terminal
+    status once (further resume/cancel/approve calls on it are rejected
+    by this module's own precondition checks before ever reaching the
+    engine), so calling this after every `execute`/`resume`/`cancel`/
+    `approve` call is naturally exactly-once, no separate tracking
+    state needed."""
+    if execution.status not in _TERMINAL_STATUSES:
+        return
+
+    for result in execution.stage_results:
+        if result.completed_at is not None:
+            duration = (result.completed_at - result.started_at).total_seconds()
+            workflow_stage_duration_seconds.labels(
+                workflow_id=execution.workflow_id, stage_id=result.stage_id,
+            ).observe(duration)
+
+    for finding in collect_findings(execution):
+        workflow_findings_total.labels(severity=finding.severity).inc()
+    evidence_gap_count = len(collect_evidence_gaps(execution))
+    if evidence_gap_count:
+        workflow_evidence_gaps_total.inc(evidence_gap_count)
+    conflict_count = len(collect_conflicts(execution))
+    if conflict_count:
+        workflow_conflicts_total.inc(conflict_count)
+
+    if execution.status == "completed":
+        workflows_completed_total.labels(workflow_id=execution.workflow_id).inc()
+    elif execution.status == "failed":
+        workflows_failed_total.labels(workflow_id=execution.workflow_id).inc()
+    else:  # cancelled, changes_requested
+        workflows_cancelled_total.labels(workflow_id=execution.workflow_id).inc()
+
+
 def execute_workflow(
     engine: WorkflowEngine, workflow_id: str, inputs: dict, *, audit: AuditContext | None = None,
 ) -> WorkflowExecution:
+    workflows_started_total.labels(workflow_id=workflow_id).inc()
     execution = engine.run(workflow_id, inputs)
+    finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_executed", resource_type="workflow_execution", resource_id=execution.execution_id,
         metadata={"workflow_id": workflow_id, "status": execution.status},
@@ -117,6 +165,7 @@ def resume_execution(
             f"Execution '{execution_id}' has terminal status '{execution.status}' and cannot be resumed.",
         )
     execution = engine.resume(execution_id)
+    finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_resumed", resource_type="workflow_execution", resource_id=execution_id,
         metadata={"status": execution.status},
@@ -134,6 +183,7 @@ def cancel_execution(
             f"Execution '{execution_id}' already has terminal status '{execution.status}'.",
         )
     execution = engine.cancel(execution_id)
+    finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_cancelled", resource_type="workflow_execution", resource_id=execution_id,
         metadata={"status": execution.status},

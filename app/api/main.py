@@ -18,10 +18,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
+from app.api.middleware.metrics import MetricsMiddleware
 from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
 from app.api.middleware.request_size_limit import RequestSizeLimitMiddleware
-from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, platform, query, workflows
+from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, metrics, platform, query, workflows
 from app.api.version import API_PREFIX, APP_VERSION
 from app.audit.store import AuditStore
 from app.auth.users import load_users
@@ -94,9 +95,10 @@ def create_app() -> FastAPI:
     api_settings = ApiSettings.from_env()
 
     # Added in reverse-of-execution order (Starlette wraps middleware so the
-    # last one added runs first): CORS handles preflight OPTIONS before
-    # anything else; then the rate limiter rejects abusive clients before
-    # the body is even read; then the size limit; then request-id/timing.
+    # last one added runs first): metrics wraps everything (so a 429/413
+    # rejected before routing still counts); then CORS handles preflight
+    # OPTIONS; then the rate limiter rejects abusive clients before the
+    # body is even read; then the size limit; then request-id/timing.
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=api_settings.max_upload_bytes)
     app.add_middleware(RateLimitMiddleware, requests_per_minute=api_settings.rate_limit_per_minute)
@@ -107,6 +109,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(MetricsMiddleware)
 
     register_exception_handlers(app)
 
@@ -119,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(approvals.router, prefix=API_PREFIX)
     app.include_router(evaluation.router, prefix=API_PREFIX)
     app.include_router(platform.router, prefix=API_PREFIX)
+    app.include_router(metrics.router)  # unprefixed -- Prometheus's own scrape convention
 
     return app
 

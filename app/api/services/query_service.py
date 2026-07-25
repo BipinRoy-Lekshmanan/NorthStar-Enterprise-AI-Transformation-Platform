@@ -23,6 +23,17 @@ from app.models.citation import Citation
 from app.models.response import RagAnswer
 from app.models.workflow import WorkflowStageResult
 from app.rag.pipeline import RagService
+from app.telemetry.metrics import (
+    advisor_duration_seconds,
+    advisor_executions_total,
+    rag_citations_count,
+    rag_model_duration_seconds,
+    rag_questions_total,
+    rag_retrieval_duration_seconds,
+    rag_total_duration_seconds,
+    routing_confidence,
+    routing_decisions_total,
+)
 from app.workflows.conflict_detection import detect_conflicts
 
 
@@ -68,6 +79,20 @@ def _diagnostics_dict(answer: RagAnswer) -> dict:
     return answer.diagnostics.model_dump(mode="json")
 
 
+def _record_rag_metrics(answer: RagAnswer, *, mode: str, advisor_id: str) -> None:
+    diagnostics = answer.diagnostics
+    rag_questions_total.labels(
+        advisor=advisor_id, mode=mode, sufficient_context=str(answer.sufficient_context).lower(),
+    ).inc()
+    rag_retrieval_duration_seconds.observe(diagnostics.retrieval_duration_ms / 1000)
+    rag_total_duration_seconds.observe(diagnostics.total_duration_ms / 1000)
+    rag_citations_count.observe(len(answer.citations))
+    if diagnostics.model_latency_ms is not None:
+        rag_model_duration_seconds.labels(provider=diagnostics.model_provider or "unknown").observe(
+            diagnostics.model_latency_ms / 1000
+        )
+
+
 def ask_manual(
     service: RagService,
     question: str,
@@ -89,10 +114,13 @@ def ask_manual(
                 RetrievedChunk(source_id=block.source_id, text=block.chunk.text, score=block.score)
             )
 
-    answer = advisor.ask(
-        service, question, filters=filters.as_dict(),
-        on_context_built=_capture if include_context else None,
-    )
+    with advisor_duration_seconds.labels(advisor_id=advisor_id).time():
+        answer = advisor.ask(
+            service, question, filters=filters.as_dict(),
+            on_context_built=_capture if include_context else None,
+        )
+    advisor_executions_total.labels(advisor_id=advisor_id).inc()
+    _record_rag_metrics(answer, mode="manual", advisor_id=advisor_id)
 
     record_from_context(
         audit, action="grounded_question_asked", resource_type="advisor", resource_id=advisor_id,
@@ -145,6 +173,13 @@ def ask_auto(
 
     response = orchestrator.ask(question)
     warnings.extend(response.warnings)
+
+    routing_decisions_total.labels(
+        primary_advisor=response.routing.primary_advisor,
+        fallback_used=str(response.routing.fallback_used).lower(),
+    ).inc()
+    routing_confidence.observe(response.routing.confidence)
+    _record_rag_metrics(response.primary_answer, mode="auto", advisor_id=response.routing.primary_advisor)
 
     conflicts = _detect_conflicts_for_response(response) if response.supporting_answers else []
 

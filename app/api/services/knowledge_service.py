@@ -24,6 +24,12 @@ from app.models.chunk import Chunk
 from app.models.query import RetrievalQuery
 from app.models.response import RetrievalResponse
 from app.rag.retriever import Retriever
+from app.telemetry.metrics import (
+    knowledge_chunks_indexed,
+    knowledge_documents_discovered,
+    knowledge_indexing_duration_seconds,
+    knowledge_ingestion_failures_total,
+)
 
 
 class UnknownDocumentError(KeyError):
@@ -132,8 +138,13 @@ def knowledge_stats(ingestion_settings: IngestionSettings | None = None) -> dict
 
 def run_ingestion(ingestion_settings: IngestionSettings | None = None) -> dict:
     settings = ingestion_settings or IngestionSettings.from_env()
-    result = IngestionPipeline(settings=settings).run(persist=True)
-    return result.summary
+    with knowledge_indexing_duration_seconds.labels(operation="ingest").time():
+        result = IngestionPipeline(settings=settings).run(persist=True)
+    summary = result.summary
+    knowledge_documents_discovered.set(summary["files_discovered"])
+    if summary["documents_failed"]:
+        knowledge_ingestion_failures_total.inc(summary["documents_failed"])
+    return summary
 
 
 def run_incremental_index(
@@ -143,7 +154,10 @@ def run_incremental_index(
     provider, store = build_provider_and_store(retrieval_settings)
     indexer = Indexer(provider, store)
     pipeline = IngestionPipeline(settings=ingestion_settings or IngestionSettings.from_env())
-    return indexer.index_from_pipeline(pipeline)
+    with knowledge_indexing_duration_seconds.labels(operation="index").time():
+        report = indexer.index_from_pipeline(pipeline)
+    knowledge_chunks_indexed.set(report.total)
+    return report
 
 
 def run_full_rebuild(
@@ -162,7 +176,10 @@ def run_full_rebuild(
 
     indexer = Indexer(provider, store)
     pipeline = IngestionPipeline(settings=ingestion_settings or IngestionSettings.from_env())
-    return indexer.index_from_pipeline(pipeline)
+    with knowledge_indexing_duration_seconds.labels(operation="rebuild").time():
+        report = indexer.index_from_pipeline(pipeline)
+    knowledge_chunks_indexed.set(report.total)
+    return report
 
 
 def search_knowledge(

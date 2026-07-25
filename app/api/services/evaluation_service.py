@@ -19,6 +19,7 @@ from app.audit.logger import AuditContext, record_from_context
 from app.evaluation.run_models import EvaluationRun
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
+from app.telemetry.metrics import evaluation_duration_seconds, evaluation_pass_rate, evaluation_runs_total
 from app.workflows.engine import WorkflowEngine
 
 
@@ -82,6 +83,13 @@ def run_and_save_evaluation(
     else:
         run = run_rag_evaluation(service)
     store.save(run)
+
+    evaluation_runs_total.labels(category=run.category).inc()
+    evaluation_pass_rate.labels(category=run.category).set(run.pass_rate)
+    if run.completed_at is not None:
+        duration_seconds = (run.completed_at - run.started_at).total_seconds()
+        evaluation_duration_seconds.labels(category=run.category).observe(duration_seconds)
+
     record_from_context(
         audit, action="evaluation_run_triggered", resource_type="evaluation_run", resource_id=run.run_id,
         metadata={"category": run.category, "total_cases": run.total_cases, "passed_cases": run.passed_cases},

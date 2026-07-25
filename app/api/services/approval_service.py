@@ -13,9 +13,13 @@ before calling the engine, so a stale/duplicate decision gets a clear
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.api.errors import ApiError, ErrorCode
+from app.api.services.workflow_service import finalize_workflow_metrics
 from app.audit.logger import AuditContext, record_from_context
 from app.models.workflow import ApprovalDecision, WorkflowExecution
+from app.telemetry.metrics import workflow_approval_wait_seconds
 from app.workflows.engine import WorkflowEngine
 
 _COMMENT_REQUIRED_DECISIONS = {"reject", "request_changes"}
@@ -43,7 +47,18 @@ def record_approval(
             f"A comment is required when the decision is '{decision}'.",
         )
 
-    result = engine.approve(execution_id, ApprovalDecision(decision=decision, reviewer=reviewer, comments=comments))
+    decided_at = datetime.now(timezone.utc)
+    paused_stage = next(
+        (r for r in reversed(execution.stage_results) if r.stage_id == execution.current_stage), None
+    )
+    if paused_stage is not None:
+        workflow_approval_wait_seconds.observe((decided_at - paused_stage.started_at).total_seconds())
+
+    result = engine.approve(
+        execution_id,
+        ApprovalDecision(decision=decision, reviewer=reviewer, comments=comments, decided_at=decided_at),
+    )
+    finalize_workflow_metrics(result)
     record_from_context(
         audit, action="workflow_approval_decided", resource_type="workflow_execution", resource_id=execution_id,
         metadata={"decision": decision, "reviewer": reviewer, "status": result.status},

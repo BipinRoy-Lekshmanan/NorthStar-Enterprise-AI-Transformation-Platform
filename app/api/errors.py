@@ -108,38 +108,37 @@ def _error_body(code: ErrorCode, message: str, details: dict, request_id: str | 
     return {"error": {"code": code.value, "message": message, "details": details, "request_id": request_id}}
 
 
+def _error_response(status_code: int, code: ErrorCode, message: str, details: dict, request_id: str | None) -> JSONResponse:
+    """Builds the error JSON body and, additionally, an `X-Error-Code`
+    response header -- lets `app.api.middleware.metrics` label the
+    `api_errors_total` counter by error code without buffering/parsing
+    the JSON response body."""
+    response = JSONResponse(status_code=status_code, content=_error_body(code, message, details, request_id))
+    response.headers["X-Error-Code"] = code.value
+    return response
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register one handler per exception type, once, at app startup."""
 
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=_error_body(exc.code, exc.message, exc.details, request_id),
-        )
+        return _error_response(exc.status_code, exc.code, exc.message, exc.details, request_id)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
-        return JSONResponse(
-            status_code=422,
-            content=_error_body(
-                ErrorCode.VALIDATION_ERROR,
-                "Request validation failed.",
-                {"errors": _sanitize_validation_errors(exc.errors())},
-                request_id,
-            ),
+        return _error_response(
+            422, ErrorCode.VALIDATION_ERROR, "Request validation failed.",
+            {"errors": _sanitize_validation_errors(exc.errors())}, request_id,
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
         code = ErrorCode.NOT_FOUND if exc.status_code == 404 else ErrorCode.INTERNAL_ERROR
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=_error_body(code, str(exc.detail), {}, request_id),
-        )
+        return _error_response(exc.status_code, code, str(exc.detail), {}, request_id)
 
     for exc_class, (status_code, code) in _DOMAIN_EXCEPTION_MAP.items():
         _register_domain_handler(app, exc_class, status_code, code)
@@ -159,6 +158,6 @@ def _register_domain_handler(app: FastAPI, exc_class: type[Exception], status_co
     async def handler(request: Request, exc: Exception) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None)
         message = _exception_message(exc)
-        return JSONResponse(status_code=status_code, content=_error_body(code, message, {}, request_id))
+        return _error_response(status_code, code, message, {}, request_id)
 
     app.add_exception_handler(exc_class, handler)
