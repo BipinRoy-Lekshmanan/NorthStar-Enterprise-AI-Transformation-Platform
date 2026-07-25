@@ -1,0 +1,74 @@
+# Milestone 8: local container stack.
+#
+#   docker compose up --build            # api + ui
+#   docker compose --profile observability up --build   # + prometheus
+#
+# After startup, open the UI at http://localhost:8501 and enter
+# "viewer-example-key-change-me" (or any other role from
+# data/auth/users.example.json) as the API key -- these are the
+# committed EXAMPLE credentials (validate_production_readiness()
+# rejects them outside local/development/test), replace users.json via
+# a real volume mount before running this anywhere but a local demo.
+#
+# Two named volumes hold everything the API generates at runtime (the
+# SQLite operational DB, the vector store, the workflow store, and
+# evaluation-run history) so state survives `docker compose down` (but
+# not `docker compose down -v`).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      AUTH_USERS_FILE: /app/data/auth/users.example.json
+      DATABASE_URL: sqlite:////app/data/app.db
+      VECTOR_STORE_DIR: /app/vector_store
+      WORKFLOW_STORE_DIR: /app/workflow_store
+      EVALUATION_RUNS_DIR: /app/evaluation_runs
+      INGESTION_OUTPUT_DIR: /app/data/processed
+      APP_ENVIRONMENT: local
+    volumes:
+      - api_data:/app/data
+      - api_vector_store:/app/vector_store
+      - api_workflow_store:/app/workflow_store
+      - api_evaluation_runs:/app/evaluation_runs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Optional: `docker compose --profile observability up` also starts a
+  # local Prometheus scraping the api service's /metrics endpoint,
+  # using the same config doc/operations/prometheus.yml documents.
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["observability"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docs/operations/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+
+volumes:
+  api_data:
+  api_vector_store:
+  api_workflow_store:
+  api_evaluation_runs:

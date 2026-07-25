@@ -1,0 +1,49 @@
+# Milestone 8: keeps the build context small and never sends anything
+# generated/local/sensitive to the Docker daemon. Dockerfile.api/
+# Dockerfile.ui COPY exactly the app/ subtrees and data files they need
+# -- nothing here is required for a correct build, this is purely to
+# avoid uploading dead weight (or secrets) as build context.
+
+.git/
+.github/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Generated ingestion / index / persistence artifacts -- never baked
+# into the image, always runtime state (see docker-compose.yml volumes).
+data/processed/
+data/app.db
+vector_store/
+workflow_store/
+audit_log/
+evaluation_runs/
+
+# Local credentials -- data/auth/users.example.json stays available to
+# the build; the real, gitignored users.json never is.
+data/auth/users.json
+
+# Local-only config
+.env
+
+# Tests, notebooks, docs, and this repo's own dev tooling -- irrelevant
+# to a running container.
+tests/
+notebooks/
+docs/
+htmlcov/
+.coverage
+
+# IDE/OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

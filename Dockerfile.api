@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+#
+# Milestone 8: container image for the FastAPI backend (`python -m app.api`).
+# Two-stage build -- dependencies are installed into a throwaway builder
+# stage's venv, and only that venv (not build tools, caches, or the
+# requirements files) is copied into the slim runtime stage.
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+
+FROM python:3.11-slim AS runtime
+
+# Non-root user -- the API process never needs root, and never should.
+RUN groupadd --gid 1000 northstar \
+    && useradd --uid 1000 --gid northstar --create-home --shell /usr/sbin/nologin northstar
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000
+
+WORKDIR /app
+
+# Application code and the real (fictional) knowledge base -- baked
+# into the image so it runs standalone with no required volume mounts.
+COPY app/ ./app/
+COPY enterprise_knowledge_base/ ./enterprise_knowledge_base/
+COPY data/auth/users.example.json ./data/auth/users.example.json
+COPY alembic.ini ./alembic.ini
+
+# Generated/runtime state -- normally overlaid by docker-compose.yml's
+# volumes, created here too so the image is self-contained even when
+# run standalone (`docker run`) without any mounted volume.
+RUN mkdir -p /app/data /app/vector_store /app/workflow_store /app/audit_log /app/evaluation_runs /app/data/processed \
+    && chown -R northstar:northstar /app
+
+USER northstar
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)" || exit 1
+
+CMD ["python", "-m", "app.api"]

@@ -10,6 +10,8 @@ freshly retrieved answer; it's just a list of past questions to re-ask.
 
 from __future__ import annotations
 
+import os
+
 import streamlit as st
 
 from app.frontend.api_client import ApiClient, ApiClientError
@@ -20,7 +22,12 @@ BASE_URL_STATE = "api_base_url"
 QUESTION_HISTORY_STATE = "question_history"
 ACTIVE_EXECUTION_STATE = "active_execution_id"
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+# Milestone 8: overridable via API_BASE_URL so the container image can
+# point the UI at the API service (e.g. "http://api:8000" in
+# docker-compose) without every user having to type it into the "API
+# base URL" field by hand -- the field itself still lets it be changed
+# per-session regardless.
+DEFAULT_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000")
 MAX_HISTORY_ITEMS = 20
 
 

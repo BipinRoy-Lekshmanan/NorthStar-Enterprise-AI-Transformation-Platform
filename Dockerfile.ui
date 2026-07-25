@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+#
+# Milestone 8: container image for the Streamlit web UI
+# (`streamlit run app/frontend/main.py`). The UI only ever talks to the
+# backend over HTTP via app.frontend.api_client.ApiClient -- no
+# database, vector-store, or model-provider code is imported here, so
+# this image only needs app/frontend/ (plus the top-level app/
+# package marker) rather than the whole app/ tree.
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# The UI's actual runtime dependencies are a small subset of
+# requirements.txt (streamlit + httpx) -- installing the full file is
+# simpler to keep in sync than maintaining a second requirements list,
+# and the extra packages (fastapi, sqlalchemy, ...) never get imported.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+
+FROM python:3.11-slim AS runtime
+
+RUN groupadd --gid 1000 northstar \
+    && useradd --uid 1000 --gid northstar --create-home --shell /usr/sbin/nologin northstar
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+COPY app/__init__.py ./app/__init__.py
+COPY app/frontend/ ./app/frontend/
+
+RUN chown -R northstar:northstar /app
+
+USER northstar
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)" || exit 1
+
+CMD ["streamlit", "run", "app/frontend/main.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
