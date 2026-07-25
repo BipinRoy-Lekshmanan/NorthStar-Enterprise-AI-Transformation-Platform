@@ -22,6 +22,7 @@ from app.api.middleware.metrics import MetricsMiddleware
 from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
 from app.api.middleware.request_size_limit import RequestSizeLimitMiddleware
+from app.api.middleware.security_headers import SecurityHeadersMiddleware
 from app.api.routes import (
     advisors,
     approvals,
@@ -130,10 +131,11 @@ def create_app() -> FastAPI:
     api_settings = ApiSettings.from_env()
 
     # Added in reverse-of-execution order (Starlette wraps middleware so the
-    # last one added runs first): metrics wraps everything (so a 429/413
-    # rejected before routing still counts); then CORS handles preflight
-    # OPTIONS; then the rate limiter rejects abusive clients before the
-    # body is even read; then the size limit; then request-id/timing.
+    # last one added runs first): security headers wrap literally everything
+    # (even a 429/413 rejected before routing gets them); then metrics (so
+    # that rejection still counts); then CORS handles preflight OPTIONS;
+    # then the rate limiter rejects abusive clients before the body is even
+    # read; then the size limit; then request-id/timing.
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=api_settings.max_upload_bytes)
     app.add_middleware(
@@ -149,6 +151,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(MetricsMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     register_exception_handlers(app)
 
