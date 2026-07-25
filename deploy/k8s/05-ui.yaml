@@ -1,0 +1,88 @@
+# UI Deployment + Service. Stateless (talks to the API over HTTP only,
+# via app.frontend.api_client.ApiClient) so this runs 2 replicas behind
+# one Service with no persistence and no scaling constraint, unlike
+# the API (see 04-api.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: northstar-ui
+  namespace: northstar
+  labels:
+    app.kubernetes.io/name: northstar-ui
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: northstar-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: northstar-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: northstar-ui:0.8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8501
+          envFrom:
+            - configMapRef:
+                name: northstar-ui-config
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+              # Streamlit writes its own runtime/cache state under a
+              # config dir at startup -- readOnlyRootFilesystem needs
+              # somewhere writable. This hasn't been verified against a
+              # real Streamlit + readOnlyRootFilesystem combination
+              # (not applied by this milestone -- see 00-namespace.yaml);
+              # if Streamlit turns out to need a writable path outside
+              # /tmp, add an emptyDir mount at that path too.
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: northstar-ui
+  namespace: northstar
+spec:
+  selector:
+    app.kubernetes.io/name: northstar-ui
+  ports:
+    - name: http
+      port: 8501
+      targetPort: http

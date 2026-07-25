@@ -1,0 +1,69 @@
+# Persistent volumes for the API's on-disk state -- the same four
+# named volumes docker-compose.yml declares (api_data, api_vector_store,
+# api_workflow_store, api_evaluation_runs), plus audit_log which
+# production_checks.py still validates as a writable directory even
+# though AuditStore itself now lives in the SQLite DB under
+# northstar-data (Milestone 8, Task #98).
+#
+# All ReadWriteOnce: the API Deployment (04-api.yaml) intentionally
+# runs a single replica, because SQLite (northstar-data) and the local
+# vector/workflow stores are single-writer -- see that file's comment
+# on why replicas > 1 isn't safe without first swapping to a
+# multi-writer database and shared object storage.
+#
+# storageClassName is left unset (cluster default) since it varies per
+# cluster; override per-environment as needed.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: northstar-data
+  namespace: northstar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: northstar-vector-store
+  namespace: northstar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: northstar-workflow-store
+  namespace: northstar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: northstar-audit-log
+  namespace: northstar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: northstar-evaluation-runs
+  namespace: northstar
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

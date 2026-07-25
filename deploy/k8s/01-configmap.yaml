@@ -1,0 +1,35 @@
+# Non-secret configuration for the API. Mirrors docker-compose.yml's
+# `environment:` block, adjusted to the PVC mount paths this manifest
+# set defines in 03-pvc.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: northstar-api-config
+  namespace: northstar
+data:
+  APP_ENVIRONMENT: "production"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  DATABASE_URL: "sqlite:////app/data/app.db"
+  VECTOR_STORE_DIR: "/app/vector_store"
+  WORKFLOW_STORE_DIR: "/app/workflow_store"
+  AUDIT_LOG_DIR: "/app/audit_log"
+  EVALUATION_RUNS_DIR: "/app/evaluation_runs"
+  INGESTION_OUTPUT_DIR: "/app/data/processed"
+  AUTH_USERS_FILE: "/app/data/auth/users.json"
+  # Defaults to the deterministic fake/local providers so the
+  # deployment "just works" without any provider credentials. Switch
+  # to real providers by changing these two values and supplying
+  # OPENAI_API_KEY / LLM_API_KEY via 02-secrets.example.yaml.
+  LLM_PROVIDER: "fake"
+  EMBEDDING_PROVIDER: "local"
+  FEATURE_FLAGS: "background_operations=true"
+---
+# Same idea for the UI -- it only needs to know where the API is.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: northstar-ui-config
+  namespace: northstar
+data:
+  API_BASE_URL: "http://northstar-api:8000"

@@ -1,0 +1,76 @@
+# EXAMPLE -- illustrates the intended traffic shape (UI -> API only,
+# API -> DNS/egress for an optional real LLM provider), not a
+# hardened, cluster-tested policy. Real enforcement depends on the
+# cluster's CNI plugin actually implementing NetworkPolicy (not all
+# do) and on egress rules matching that cluster's real DNS/API-server
+# CIDRs, neither of which is knowable from outside a real cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: northstar-api-policy
+  namespace: northstar
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: northstar-api
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    # Only the UI pods may reach the API on its HTTP port -- nothing
+    # else in (or outside) the cluster.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: northstar-ui
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS (needed to resolve api.openai.com when LLM_PROVIDER=openai).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS egress, for the optional real OpenAI provider. Tighten
+    # this to the provider's real IP ranges in a real deployment --
+    # 0.0.0.0/0 here is a placeholder, not a recommendation.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: northstar-ui-policy
+  namespace: northstar
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: northstar-ui
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    # Whatever sits in front of the UI (an Ingress controller, a
+    # LoadBalancer Service) -- left open since that varies per
+    # cluster; narrow this to the ingress controller's namespace in a
+    # real deployment.
+    - {}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: northstar-api
+      ports:
+        - protocol: TCP
+          port: 8000
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

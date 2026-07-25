@@ -1,0 +1,20 @@
+# EXAMPLE -- bounds voluntary disruption (node drains, cluster
+# upgrades) during rollouts/maintenance.
+#
+# No PDB for northstar-api: it deliberately runs a single replica
+# (04-api.yaml) -- minAvailable: 1 on a 1-replica Deployment would
+# block every voluntary eviction outright (node drains, cluster
+# upgrades) rather than bound disruption, which is the opposite of
+# what a PDB is for. Accepting brief API downtime during node
+# maintenance is the correct tradeoff until the API is actually scaled
+# to more than one replica.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: northstar-ui-pdb
+  namespace: northstar
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: northstar-ui

@@ -1,0 +1,23 @@
+# Milestone 8: illustrative Kubernetes manifests for the Northstar
+# platform (plain YAML, not a Helm chart -- one config surface is
+# enough for one worked example). These are NOT applied or deployed by
+# this milestone; they demonstrate what a real rollout would look
+# like, for review rather than `kubectl apply`.
+#
+# Suggested apply order (numeric filename prefixes):
+#   00-namespace, 01-configmap, 02-secrets.example, 03-pvc,
+#   04-api, 05-ui, 06-networkpolicy.example, 07-poddisruptionbudget.example
+#
+# Before applying any of this against a real cluster: replace every
+# *.example.yaml file's placeholder values with real secrets (never
+# commit real secrets to git -- use a sealed-secrets/external-secrets
+# controller, or `kubectl create secret` directly against the
+# cluster), and run `python -m app.release validate` /
+# `python -m app.config validate` against the target environment's
+# real env vars first.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: northstar
+  labels:
+    app.kubernetes.io/part-of: northstar
