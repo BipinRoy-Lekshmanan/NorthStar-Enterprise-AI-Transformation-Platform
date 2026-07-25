@@ -15,7 +15,7 @@ from alembic.config import Config
 from app.config.settings import PROJECT_ROOT
 
 
-def _alembic_config() -> Config:
+def alembic_config() -> Config:
     return Config(str(PROJECT_ROOT / "alembic.ini"))
 
 
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers.add_parser("history", help="Show the full migration history.")
     args = parser.parse_args(argv)
 
-    config = _alembic_config()
+    config = alembic_config()
     if args.action == "upgrade":
         command.upgrade(config, "head")
     elif args.action == "current":

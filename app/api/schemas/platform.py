@@ -19,6 +19,18 @@ class HealthDetailOut(BaseModel):
     workflow_count: int
 
 
+class PlatformInfoOut(BaseModel):
+    version: str
+    environment: str
+    prompt_version: str
+    schema_version: str | None
+
+
+class ReadinessOut(BaseModel):
+    ready: bool
+    checks: dict[str, str]
+
+
 class AuditEventOut(BaseModel):
     timestamp: datetime
     request_id: str | None
