@@ -17,6 +17,7 @@ from app.api.dependencies.services import (
     get_audit_store,
     get_cost_tracker,
     get_ingestion_settings,
+    get_privacy_settings,
     get_rag_service,
     get_rag_settings,
     get_router_settings,
@@ -29,6 +30,7 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.config.privacy import PrivacySettings, redact_citation_excerpts
 from app.config.settings import IngestionSettings, RagSettings, RouterSettings
 from app.export.common import build_query_export_envelope
 from app.export.markdown_renderer import render_query_answer_markdown
@@ -51,6 +53,7 @@ def ask_question(
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     cost_tracker: CostTracker = Depends(get_cost_tracker),
+    privacy_settings: PrivacySettings = Depends(get_privacy_settings),
     user: User = Depends(require_role(Role.VIEWER)),
 ) -> QueryResponse:
     filters = QueryFilters(
@@ -79,6 +82,7 @@ def ask_question(
     response = build_query_response(result, request_id)
     restricted_ids = restricted_ids_for_role(user.role, ingestion_settings)
     response.citations = filter_restricted_citations(response.citations, restricted_ids)
+    response.citations = redact_citation_excerpts(response.citations, privacy_settings.include_citation_excerpts)
     if format == "markdown":
         markdown_text = render_query_answer_markdown(build_query_export_envelope(response.model_dump(mode="json")))
         return PlainTextResponse(markdown_text, media_type="text/markdown")

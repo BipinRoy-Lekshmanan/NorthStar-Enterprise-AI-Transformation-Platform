@@ -17,6 +17,7 @@ from fastapi import Request
 
 from app.audit.store import AuditStore
 from app.config.feature_flags import FeatureFlagSettings
+from app.config.privacy import PrivacySettings
 from app.config.settings import (
     IngestionSettings,
     RagSettings,
@@ -67,6 +68,10 @@ def get_operation_runner(request: Request) -> OperationRunner:
 
 def get_feature_flags(request: Request) -> FeatureFlagSettings:
     return request.app.state.feature_flags
+
+
+def get_privacy_settings(request: Request) -> PrivacySettings:
+    return request.app.state.privacy_settings
 
 
 def get_cost_tracker(request: Request) -> CostTracker:

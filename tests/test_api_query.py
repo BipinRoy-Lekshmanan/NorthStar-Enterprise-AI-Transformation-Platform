@@ -299,3 +299,31 @@ def test_query_returns_429_once_the_daily_budget_is_exceeded(users_file, tmp_pat
 
     assert response.status_code == 429
     assert response.json()["error"]["code"] == "BUDGET_EXCEEDED"
+
+
+def test_query_citations_redact_excerpts_when_the_privacy_flag_disables_them(users_file, tmp_path, monkeypatch):
+    """INCLUDE_CITATION_EXCERPTS is read once at lifespan startup, so it
+    must be set before create_app()/TestClient(...) run."""
+    monkeypatch.setenv("INCLUDE_CITATION_EXCERPTS", "false")
+
+    kb_root = tmp_path / "kb_root"
+    kb_root.mkdir()
+    service = _build_service(kb_root)
+    monkeypatch.setenv("KNOWLEDGE_BASE_DIRS", str(kb_root / "kb"))
+
+    app = create_app()
+    app.dependency_overrides[get_rag_service] = lambda: service
+    app.dependency_overrides[get_rag_settings] = lambda: _rag_settings()
+    app.dependency_overrides[get_router_settings] = lambda: _router_settings()
+
+    with TestClient(app) as privacy_client:
+        response = privacy_client.post(
+            "/api/v1/query", json={"question": "What testing evidence is required?", "advisor": "testing"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["citations"]
+    for citation in body["citations"]:
+        assert citation["excerpt"] == "[excerpt redacted by privacy policy]"

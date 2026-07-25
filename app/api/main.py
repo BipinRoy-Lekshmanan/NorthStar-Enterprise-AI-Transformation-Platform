@@ -41,6 +41,7 @@ from app.audit.store import AuditStore
 from app.auth.users import load_users
 from app.config.environment import current_environment
 from app.config.feature_flags import FeatureFlagSettings
+from app.config.privacy import PrivacySettings
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     app.state.started_at = datetime.now(timezone.utc)
     app.state.lock_registry = LockRegistry()
     app.state.feature_flags = FeatureFlagSettings.from_env()
+    app.state.privacy_settings = PrivacySettings.from_env()
 
     db_engine = build_engine(DatabaseSettings.from_env().database_url)
     # Safety net for dev/test environments that never ran `python -m

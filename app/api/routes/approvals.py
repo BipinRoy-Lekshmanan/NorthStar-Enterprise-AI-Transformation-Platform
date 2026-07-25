@@ -17,6 +17,7 @@ from app.api.dependencies.services import (
     get_idempotency_store,
     get_ingestion_settings,
     get_lock_registry,
+    get_privacy_settings,
     get_workflow_engine,
 )
 from app.api.schemas.approvals import ApprovalDecisionRequest, PendingApprovalOut, build_pending_approval_out
@@ -30,6 +31,7 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.config.privacy import PrivacySettings, redact_citation_excerpts
 from app.config.settings import IngestionSettings
 from app.resilience.concurrency import LockRegistry
 from app.resilience.idempotency import IdempotencyStore
@@ -39,7 +41,9 @@ from app.workflows.synthesis import dedupe_citations
 router = APIRouter()
 
 
-def _detail_out(execution, restricted_ids: set[str] | None = None) -> ExecutionDetailOut:
+def _detail_out(
+    execution, restricted_ids: set[str] | None = None, include_excerpts: bool = True,
+) -> ExecutionDetailOut:
     detail = build_execution_detail_out(
         execution,
         findings=collect_findings(execution),
@@ -49,6 +53,7 @@ def _detail_out(execution, restricted_ids: set[str] | None = None) -> ExecutionD
     )
     if restricted_ids:
         detail.citations = filter_restricted_citations(detail.citations, restricted_ids)
+    detail.citations = redact_citation_excerpts(detail.citations, include_excerpts)
     return detail
 
 
@@ -75,6 +80,7 @@ def decide_approval_route(
     audit_store: AuditStore = Depends(get_audit_store),
     lock_registry: LockRegistry = Depends(get_lock_registry),
     idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
+    privacy_settings: PrivacySettings = Depends(get_privacy_settings),
     user: User = Depends(require_role(Role.REVIEWER)),
 ) -> ExecutionDetailOut:
     idempotency_endpoint = f"approval_decide:{execution_id}"
@@ -89,7 +95,9 @@ def decide_approval_route(
     execution = record_approval(
         engine, execution_id, body.decision, reviewer, body.comments, audit=audit, lock_registry=lock_registry,
     )
-    result = _detail_out(execution, restricted_ids_for_role(user.role, ingestion_settings))
+    result = _detail_out(
+        execution, restricted_ids_for_role(user.role, ingestion_settings), privacy_settings.include_citation_excerpts,
+    )
     save_idempotent_response(
         request, idempotency_store, idempotency_endpoint, request_body, 200, result.model_dump(mode="json"),
     )
