@@ -30,12 +30,14 @@ class EvaluationRunSummaryOut(BaseModel):
     total_cases: int
     passed_cases: int
     pass_rate: float
+    organization_id: str | None = None  # multi-tenant boundary prep (Milestone 8) -- always None today
 
 
 def build_evaluation_run_summary_out(run: EvaluationRun) -> EvaluationRunSummaryOut:
     return EvaluationRunSummaryOut(
         run_id=run.run_id, category=run.category, started_at=run.started_at, completed_at=run.completed_at,
         status=run.status, total_cases=run.total_cases, passed_cases=run.passed_cases, pass_rate=run.pass_rate,
+        organization_id=run.organization_id,
     )
 
 

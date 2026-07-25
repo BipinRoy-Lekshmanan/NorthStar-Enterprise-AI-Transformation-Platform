@@ -29,11 +29,12 @@ class AuditEventOut(BaseModel):
     resource_id: str | None
     outcome: str
     metadata: dict[str, Any]
+    organization_id: str | None = None  # multi-tenant boundary prep (Milestone 8) -- always None today
 
 
 def build_audit_event_out(event: AuditEvent) -> AuditEventOut:
     return AuditEventOut(
         timestamp=event.timestamp, request_id=event.request_id, actor=event.actor, role=event.role,
         action=event.action, resource_type=event.resource_type, resource_id=event.resource_id,
-        outcome=event.outcome, metadata=event.metadata,
+        outcome=event.outcome, metadata=event.metadata, organization_id=event.organization_id,
     )

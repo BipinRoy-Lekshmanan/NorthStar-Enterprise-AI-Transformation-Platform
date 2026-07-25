@@ -15,6 +15,12 @@ def _store(tmp_path, name="audit.db") -> AuditStore:
     return AuditStore(build_session_factory(engine))
 
 
+def test_audit_event_organization_id_defaults_to_none():
+    # Multi-tenant boundary prep (Milestone 8) -- always None today.
+    event = AuditEvent(actor="alice", role="viewer", action="grounded_question_asked")
+    assert event.organization_id is None
+
+
 def test_audit_event_defaults():
     event = AuditEvent(actor="alice", role="viewer", action="grounded_question_asked")
     assert event.outcome == "success"
@@ -134,6 +140,37 @@ def test_verify_chain_detects_a_tampered_field(tmp_path):
     assert result.valid is False
     assert result.first_invalid_sequence == 1
     assert "sequence 1" in result.reason
+
+
+def test_store_round_trips_organization_id(tmp_path):
+    store = _store(tmp_path)
+    store.record(
+        AuditEvent(actor="alice", role="viewer", action="grounded_question_asked", organization_id="org-1")
+    )
+    store.record(AuditEvent(actor="bob", role="viewer", action="grounded_question_asked"))
+
+    events = store.list_events()
+    assert events[0].organization_id is None
+    assert events[1].organization_id == "org-1"
+
+
+def test_verify_chain_detects_a_tampered_organization_id(tmp_path):
+    store = _store(tmp_path)
+    store.record(
+        AuditEvent(actor="alice", role="viewer", action="grounded_question_asked", organization_id="org-1")
+    )
+
+    with store._session_factory() as session:  # noqa: SLF001 -- direct DB tampering to simulate an attack
+        from app.db.models import AuditEventRecord
+
+        row = session.query(AuditEventRecord).filter_by(sequence_number=1).one()
+        row.organization_id = "org-2"
+        session.commit()
+
+    result = store.verify_chain()
+
+    assert result.valid is False
+    assert result.first_invalid_sequence == 1
 
 
 def test_verify_chain_detects_a_broken_previous_hash_link(tmp_path):

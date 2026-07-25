@@ -28,3 +28,10 @@ class AuditEvent(BaseModel):
     resource_id: str | None = None
     outcome: str = "success"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Multi-tenant boundary prep (Milestone 8): always None today -- this
+    # platform has exactly one tenant, and nothing filters or scopes by
+    # this field anywhere. It exists so a future multi-tenant milestone
+    # can start populating and querying by it without another schema
+    # change to the audit log (app.db.models.AuditEventRecord already
+    # has the matching column).
+    organization_id: str | None = None

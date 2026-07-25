@@ -36,6 +36,11 @@ class EvaluationRun(BaseModel):
     passed_cases: int = 0
     results: list[dict[str, Any]] = Field(default_factory=list)
     summary: dict[str, Any] = Field(default_factory=dict)
+    # Multi-tenant boundary prep (Milestone 8): always None today -- this
+    # platform has exactly one tenant, and nothing filters or scopes runs
+    # by this field. It exists so a future multi-tenant milestone can
+    # start populating and querying by it without another schema change.
+    organization_id: str | None = None
 
     @field_validator("category")
     @classmethod

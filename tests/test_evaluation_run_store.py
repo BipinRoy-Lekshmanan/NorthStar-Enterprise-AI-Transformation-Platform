@@ -35,6 +35,17 @@ def test_invalid_status_is_rejected():
         _run(status="bogus")
 
 
+def test_organization_id_defaults_to_none():
+    # Multi-tenant boundary prep (Milestone 8) -- always None today.
+    assert _run().organization_id is None
+
+
+def test_store_round_trips_organization_id(tmp_path):
+    store = EvaluationRunStore(tmp_path / "evaluation_runs")
+    store.save(_run(organization_id="org-1"))
+    assert store.load("run-1").organization_id == "org-1"
+
+
 def test_store_save_then_load_round_trips(tmp_path):
     store = EvaluationRunStore(tmp_path / "evaluation_runs")
     run = _run(results=[{"case_id": "c1", "passed": True}], summary={"pass_rate": 0.75})

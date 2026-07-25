@@ -3,7 +3,8 @@ superseding Milestone 7's append-only JSONL file).
 
 Each event is chained to the one before it: `current_hash` is a SHA-256
 digest over `(sequence_number, previous_hash, timestamp, actor, role,
-action, resource_type, resource_id, request_id, outcome, metadata)`, and
+action, resource_type, resource_id, request_id, outcome, metadata,
+organization_id)`, and
 `previous_hash` is the prior event's `current_hash` (`None` for the
 first event). `verify_chain()` walks every event in sequence and
 recomputes the digest -- any edited, deleted-and-reinserted, or
@@ -49,7 +50,7 @@ def _as_aware_utc(value: datetime) -> datetime:
 def _compute_hash(
     *, sequence_number: int, previous_hash: str | None, timestamp: datetime, actor: str, role: str | None,
     action: str, resource_type: str | None, resource_id: str | None, request_id: str | None,
-    outcome: str, metadata: dict,
+    outcome: str, metadata: dict, organization_id: str | None = None,
 ) -> str:
     canonical = json.dumps(
         {
@@ -64,6 +65,7 @@ def _compute_hash(
             "request_id": request_id,
             "outcome": outcome,
             "metadata": metadata,
+            "organization_id": organization_id,
         },
         sort_keys=True, default=str,
     )
@@ -74,7 +76,7 @@ def _to_audit_event(record: AuditEventRecord) -> AuditEvent:
     return AuditEvent(
         timestamp=record.timestamp, request_id=record.request_id, actor=record.actor, role=record.role or "",
         action=record.action, resource_type=record.resource_type, resource_id=record.resource_id,
-        outcome=record.outcome, metadata=record.event_metadata,
+        outcome=record.outcome, metadata=record.event_metadata, organization_id=record.organization_id,
     )
 
 
@@ -109,14 +111,15 @@ class AuditStore:
                 sequence_number=sequence_number, previous_hash=previous_hash, timestamp=event.timestamp,
                 actor=event.actor, role=event.role, action=event.action, resource_type=event.resource_type,
                 resource_id=event.resource_id, request_id=event.request_id, outcome=event.outcome,
-                metadata=event.metadata,
+                metadata=event.metadata, organization_id=event.organization_id,
             )
             session.add(
                 AuditEventRecord(
                     event_id=str(uuid.uuid4()), sequence_number=sequence_number, timestamp=event.timestamp,
                     actor=event.actor, role=event.role, action=event.action, resource_type=event.resource_type,
                     resource_id=event.resource_id, outcome=event.outcome, request_id=event.request_id,
-                    event_metadata=event.metadata, previous_hash=previous_hash, current_hash=current_hash,
+                    event_metadata=event.metadata, organization_id=event.organization_id,
+                    previous_hash=previous_hash, current_hash=current_hash,
                 )
             )
 
@@ -148,6 +151,7 @@ class AuditStore:
                     timestamp=record.timestamp, actor=record.actor, role=record.role, action=record.action,
                     resource_type=record.resource_type, resource_id=record.resource_id,
                     request_id=record.request_id, outcome=record.outcome, metadata=record.event_metadata,
+                    organization_id=record.organization_id,
                 )
                 if record.current_hash != expected:
                     return ChainVerificationResult(
