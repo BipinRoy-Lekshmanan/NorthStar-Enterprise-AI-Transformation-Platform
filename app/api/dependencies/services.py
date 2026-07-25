@@ -25,6 +25,7 @@ from app.config.settings import (
 )
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
+from app.resilience.concurrency import LockRegistry
 from app.workflows.engine import WorkflowEngine
 
 
@@ -46,6 +47,10 @@ def get_evaluation_run_store(request: Request) -> EvaluationRunStore:
 
 def get_started_at(request: Request) -> datetime:
     return request.app.state.started_at
+
+
+def get_lock_registry(request: Request) -> LockRegistry:
+    return request.app.state.lock_registry
 
 
 def get_audit_store(request: Request) -> AuditStore:

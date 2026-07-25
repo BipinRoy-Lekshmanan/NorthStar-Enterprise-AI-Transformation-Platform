@@ -17,6 +17,7 @@ from app.embeddings.vectorizer import (
     EmbeddingTimeoutError,
 )
 from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from app.resilience.concurrency import BoundedConcurrency
 from app.resilience.retry import retry_with_backoff
 from app.telemetry.metrics import provider_failures_total
 
@@ -40,6 +41,7 @@ class OpenAIEmbeddingProvider:
         max_retries: int = 3,
         batch_size: int = _DEFAULT_BATCH_SIZE,
         circuit_breaker: CircuitBreaker | None = None,
+        max_concurrent_requests: int = 5,
     ):
         try:
             from openai import OpenAI
@@ -54,6 +56,10 @@ class OpenAIEmbeddingProvider:
         self._max_retries = max_retries
         self._batch_size = batch_size
         self._circuit_breaker = circuit_breaker or CircuitBreaker(name=_PROVIDER_NAME)
+        # Caps concurrent in-flight batches -- a burst of concurrent
+        # embed_texts()/embed_query() calls queues rather than overwhelming
+        # the provider's own connection pool or rate limits.
+        self._concurrency = BoundedConcurrency(max_concurrent_requests)
 
     @property
     def info(self) -> EmbeddingProviderInfo:
@@ -95,7 +101,8 @@ class OpenAIEmbeddingProvider:
             )
 
         try:
-            return self._circuit_breaker.call(call_with_retry, failure_exceptions=_RETRYABLE_ERRORS)
+            with self._concurrency.acquire():
+                return self._circuit_breaker.call(call_with_retry, failure_exceptions=_RETRYABLE_ERRORS)
         except CircuitBreakerOpenError as exc:
             provider_failures_total.labels(provider=_PROVIDER_NAME, error_type="CircuitBreakerOpen").inc()
             raise EmbeddingProviderError(str(exc)) from exc

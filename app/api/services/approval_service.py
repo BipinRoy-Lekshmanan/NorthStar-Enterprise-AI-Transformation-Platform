@@ -16,9 +16,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from app.api.errors import ApiError, ErrorCode
-from app.api.services.workflow_service import finalize_workflow_metrics
+from app.api.services.workflow_service import finalize_workflow_metrics, run_locked
 from app.audit.logger import AuditContext, record_from_context
 from app.models.workflow import ApprovalDecision, WorkflowExecution
+from app.resilience.concurrency import LockRegistry
 from app.telemetry.metrics import workflow_approval_wait_seconds
 from app.workflows.engine import WorkflowEngine
 
@@ -33,7 +34,7 @@ def list_pending_approvals(engine: WorkflowEngine) -> list[WorkflowExecution]:
 
 def record_approval(
     engine: WorkflowEngine, execution_id: str, decision: str, reviewer: str | None, comments: str | None,
-    *, audit: AuditContext | None = None,
+    *, audit: AuditContext | None = None, lock_registry: LockRegistry | None = None,
 ) -> WorkflowExecution:
     execution = engine.store.load(execution_id)
     if execution.status != "awaiting_approval":
@@ -54,9 +55,12 @@ def record_approval(
     if paused_stage is not None:
         workflow_approval_wait_seconds.observe((decided_at - paused_stage.started_at).total_seconds())
 
-    result = engine.approve(
-        execution_id,
-        ApprovalDecision(decision=decision, reviewer=reviewer, comments=comments, decided_at=decided_at),
+    result = run_locked(
+        lock_registry, execution_id,
+        lambda: engine.approve(
+            execution_id,
+            ApprovalDecision(decision=decision, reviewer=reviewer, comments=comments, decided_at=decided_at),
+        ),
     )
     finalize_workflow_metrics(result)
     record_from_context(

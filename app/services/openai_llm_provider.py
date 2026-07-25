@@ -13,6 +13,7 @@ import logging
 import time
 
 from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from app.resilience.concurrency import BoundedConcurrency
 from app.resilience.retry import retry_with_backoff
 from app.services.llm_service import (
     InvalidModelResponseError,
@@ -40,6 +41,7 @@ class OpenAIModelProvider:
         timeout: float = 30.0,
         max_retries: int = 3,
         circuit_breaker: CircuitBreaker | None = None,
+        max_concurrent_requests: int = 5,
     ):
         try:
             from openai import OpenAI
@@ -56,6 +58,10 @@ class OpenAIModelProvider:
         # keeps test instances isolated from one another with no shared
         # mutable state to reset between tests.
         self._circuit_breaker = circuit_breaker or CircuitBreaker(name=_PROVIDER_NAME)
+        # Caps concurrent in-flight calls to this provider -- a burst of
+        # concurrent requests queues (blocks briefly) rather than
+        # overwhelming the provider's own connection pool or rate limits.
+        self._concurrency = BoundedConcurrency(max_concurrent_requests)
 
     def generate(
         self,
@@ -95,9 +101,11 @@ class OpenAIModelProvider:
 
         start = time.perf_counter()
         try:
-            response = self._circuit_breaker.call(
-                call_with_retry, failure_exceptions=(ModelRateLimitError, ModelTimeoutError, ModelUnavailableError),
-            )
+            with self._concurrency.acquire():
+                response = self._circuit_breaker.call(
+                    call_with_retry,
+                    failure_exceptions=(ModelRateLimitError, ModelTimeoutError, ModelUnavailableError),
+                )
         except CircuitBreakerOpenError as exc:
             provider_failures_total.labels(provider=_PROVIDER_NAME, error_type="CircuitBreakerOpen").inc()
             raise ModelUnavailableError(str(exc)) from exc

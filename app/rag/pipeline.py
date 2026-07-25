@@ -257,5 +257,6 @@ def _build_llm_provider(settings: RagSettings) -> LanguageModelProvider:
             api_key=settings.llm_api_key,
             model=settings.llm_model,
             timeout=settings.llm_timeout_seconds,
+            max_concurrent_requests=settings.llm_max_concurrent_requests,
         )
     return FakeModelProvider(model=settings.llm_model)

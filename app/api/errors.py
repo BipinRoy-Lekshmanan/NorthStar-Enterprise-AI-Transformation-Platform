@@ -54,6 +54,10 @@ class ErrorCode(str, Enum):
     # every error the API can return has exactly one code.
     UNAUTHORIZED = "UNAUTHORIZED"
     FORBIDDEN = "FORBIDDEN"
+    # Milestone 8: a concurrent conflicting operation (a rebuild already
+    # running, a resume/approval already being processed for this
+    # execution) was rejected rather than double-processed.
+    CONCURRENCY_CONFLICT = "CONCURRENCY_CONFLICT"
 
 
 class ApiError(Exception):

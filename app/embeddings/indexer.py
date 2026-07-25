@@ -97,6 +97,7 @@ def build_provider_and_store(settings: RetrievalSettings | None = None) -> tuple
             api_key=settings.openai_api_key,
             model=settings.embedding_model,
             dimensions=settings.embedding_dimensions,
+            max_concurrent_requests=settings.embedding_max_concurrent_requests,
         )
     else:
         provider = LocalHashingEmbeddingProvider(

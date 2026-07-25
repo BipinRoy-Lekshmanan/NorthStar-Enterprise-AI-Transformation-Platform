@@ -20,6 +20,7 @@ from app.api.errors import ApiError, ErrorCode
 from app.audit.logger import AuditContext, record_from_context
 from app.config.settings import PROJECT_ROOT
 from app.models.workflow import EvidenceGap, ReviewFinding, WorkflowExecution
+from app.resilience.concurrency import ConcurrencyConflictError, LockRegistry
 from app.telemetry.metrics import (
     workflow_conflicts_total,
     workflow_evidence_gaps_total,
@@ -152,8 +153,17 @@ def get_execution(engine: WorkflowEngine, execution_id: str) -> WorkflowExecutio
     return engine.store.load(execution_id)
 
 
+def execution_lock_name(execution_id: str) -> str:
+    """Shared lock-name convention for `resume_execution`/`cancel_execution`/
+    `approval_service.record_approval` -- one execution can only be
+    mutated by one concurrent request at a time, whichever kind of
+    mutation it is."""
+    return f"workflow_execution:{execution_id}"
+
+
 def resume_execution(
     engine: WorkflowEngine, execution_id: str, *, audit: AuditContext | None = None,
+    lock_registry: LockRegistry | None = None,
 ) -> WorkflowExecution:
     execution = engine.store.load(execution_id)
     if execution.status == "awaiting_approval":
@@ -166,7 +176,8 @@ def resume_execution(
             409, ErrorCode.WORKFLOW_ALREADY_COMPLETED,
             f"Execution '{execution_id}' has terminal status '{execution.status}' and cannot be resumed.",
         )
-    execution = engine.resume(execution_id)
+
+    execution = run_locked(lock_registry, execution_id, lambda: engine.resume(execution_id))
     finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_resumed", resource_type="workflow_execution", resource_id=execution_id,
@@ -177,6 +188,7 @@ def resume_execution(
 
 def cancel_execution(
     engine: WorkflowEngine, execution_id: str, *, audit: AuditContext | None = None,
+    lock_registry: LockRegistry | None = None,
 ) -> WorkflowExecution:
     execution = engine.store.load(execution_id)
     if execution.status in _TERMINAL_STATUSES:
@@ -184,13 +196,32 @@ def cancel_execution(
             409, ErrorCode.WORKFLOW_ALREADY_COMPLETED,
             f"Execution '{execution_id}' already has terminal status '{execution.status}'.",
         )
-    execution = engine.cancel(execution_id)
+
+    execution = run_locked(lock_registry, execution_id, lambda: engine.cancel(execution_id))
     finalize_workflow_metrics(execution)
     record_from_context(
         audit, action="workflow_cancelled", resource_type="workflow_execution", resource_id=execution_id,
         metadata={"status": execution.status},
     )
     return execution
+
+
+def run_locked(lock_registry: LockRegistry | None, execution_id: str, func) -> WorkflowExecution:
+    """Runs `func()` (a zero-arg call into the engine) under this
+    execution's lock, when a registry is supplied -- rejects a second,
+    concurrent mutation of the *same* execution (e.g. two requests both
+    resuming it at once) with 409 CONCURRENCY_CONFLICT rather than
+    letting both proceed and risk double-processing a stage."""
+    if lock_registry is None:
+        return func()
+    try:
+        with lock_registry.acquire(execution_lock_name(execution_id)):
+            return func()
+    except ConcurrencyConflictError as exc:
+        raise ApiError(
+            409, ErrorCode.CONCURRENCY_CONFLICT,
+            f"Execution '{execution_id}' is already being processed by another request.",
+        ) from exc
 
 
 def collect_findings(execution: WorkflowExecution) -> list[ReviewFinding]:

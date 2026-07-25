@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.api.dependencies.services import (
     get_audit_store,
     get_ingestion_settings,
+    get_lock_registry,
     get_rag_service,
     get_retrieval_settings,
 )
@@ -46,6 +47,7 @@ from app.auth.roles import Role
 from app.auth.users import User
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.rag.pipeline import RagService
+from app.resilience.concurrency import LockRegistry
 
 router = APIRouter()
 
@@ -170,12 +172,13 @@ def rebuild_route(
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     retrieval_settings: RetrievalSettings = Depends(get_retrieval_settings),
     audit_store: AuditStore = Depends(get_audit_store),
+    lock_registry: LockRegistry = Depends(get_lock_registry),
     user: User = Depends(require_role(Role.ADMINISTRATOR)),
 ) -> IndexSummaryOut:
     if body.confirmation != "REBUILD":
         raise ApiError(400, ErrorCode.VALIDATION_ERROR, "Type REBUILD (exact case) to confirm a full rebuild.")
 
-    report = run_full_rebuild(ingestion_settings, retrieval_settings)
+    report = run_full_rebuild(ingestion_settings, retrieval_settings, lock_registry=lock_registry)
     request_id = getattr(request.state, "request_id", None)
     record_from_context(
         AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id),

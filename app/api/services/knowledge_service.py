@@ -24,6 +24,7 @@ from app.models.chunk import Chunk
 from app.models.query import RetrievalQuery
 from app.models.response import RetrievalResponse
 from app.rag.retriever import Retriever
+from app.resilience.concurrency import ConcurrencyConflictError, LockRegistry
 from app.telemetry.metrics import (
     knowledge_chunks_indexed,
     knowledge_documents_discovered,
@@ -160,26 +161,51 @@ def run_incremental_index(
     return report
 
 
+_REBUILD_LOCK_NAME = "knowledge_rebuild"
+
+
 def run_full_rebuild(
-    ingestion_settings: IngestionSettings | None = None, retrieval_settings: RetrievalSettings | None = None
+    ingestion_settings: IngestionSettings | None = None, retrieval_settings: RetrievalSettings | None = None,
+    lock_registry: LockRegistry | None = None,
 ) -> IndexSyncReport:
     """Deletes every currently-indexed chunk, then re-indexes from
     scratch. The route layer is responsible for validating an explicit
     confirmation phrase before ever calling this -- once called, it
-    always rebuilds unconditionally."""
-    retrieval_settings = retrieval_settings or RetrievalSettings.from_env()
-    provider, store = build_provider_and_store(retrieval_settings)
+    always rebuilds unconditionally.
 
-    existing_ids = list(store.existing_ids())
-    if existing_ids:
-        store.delete(existing_ids)
+    `lock_registry` (when supplied) prevents a second, concurrent
+    rebuild from starting while one is already in progress -- two
+    concurrent rebuilds racing to delete/re-index the same vector store
+    would corrupt it, not just waste work."""
+    def _do_rebuild() -> IndexSyncReport:
+        settings = retrieval_settings or RetrievalSettings.from_env()
+        provider, store = build_provider_and_store(settings)
 
-    indexer = Indexer(provider, store)
-    pipeline = IngestionPipeline(settings=ingestion_settings or IngestionSettings.from_env())
-    with knowledge_indexing_duration_seconds.labels(operation="rebuild").time():
-        report = indexer.index_from_pipeline(pipeline)
-    knowledge_chunks_indexed.set(report.total)
-    return report
+        existing_ids = list(store.existing_ids())
+        if existing_ids:
+            store.delete(existing_ids)
+
+        indexer = Indexer(provider, store)
+        pipeline = IngestionPipeline(settings=ingestion_settings or IngestionSettings.from_env())
+        with knowledge_indexing_duration_seconds.labels(operation="rebuild").time():
+            report = indexer.index_from_pipeline(pipeline)
+        knowledge_chunks_indexed.set(report.total)
+        return report
+
+    if lock_registry is None:
+        return _do_rebuild()
+
+    # Deferred import: app.api.errors imports UnknownDocumentError from
+    # this module, so a module-level import back here would be circular.
+    from app.api.errors import ApiError, ErrorCode
+
+    try:
+        with lock_registry.acquire(_REBUILD_LOCK_NAME):
+            return _do_rebuild()
+    except ConcurrencyConflictError as exc:
+        raise ApiError(
+            409, ErrorCode.CONCURRENCY_CONFLICT, "A knowledge-base rebuild is already in progress.",
+        ) from exc
 
 
 def search_knowledge(

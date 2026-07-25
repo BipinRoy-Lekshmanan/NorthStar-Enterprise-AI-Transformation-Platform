@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
-from app.api.dependencies.services import get_audit_store, get_workflow_engine
+from app.api.dependencies.services import get_audit_store, get_lock_registry, get_workflow_engine
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas.common import DEFAULT_PAGE_SIZE, PaginatedResponse, paginate_slice, validate_pagination
 from app.api.schemas.workflows import (
@@ -50,6 +50,7 @@ from app.auth.roles import Role
 from app.auth.users import User
 from app.export.common import build_workflow_report_export_envelope
 from app.export.markdown_renderer import render_workflow_report_markdown
+from app.resilience.concurrency import LockRegistry
 from app.workflows.engine import WorkflowEngine
 from app.workflows.synthesis import dedupe_citations
 
@@ -152,11 +153,12 @@ def resume_execution_route(
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     audit_store: AuditStore = Depends(get_audit_store),
+    lock_registry: LockRegistry = Depends(get_lock_registry),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> ExecutionDetailOut:
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
-    execution = resume_execution(engine, execution_id, audit=audit)
+    execution = resume_execution(engine, execution_id, audit=audit, lock_registry=lock_registry)
     return _detail_out(execution)
 
 
@@ -169,11 +171,12 @@ def cancel_execution_route(
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     audit_store: AuditStore = Depends(get_audit_store),
+    lock_registry: LockRegistry = Depends(get_lock_registry),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> ExecutionDetailOut:
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
-    execution = cancel_execution(engine, execution_id, audit=audit)
+    execution = cancel_execution(engine, execution_id, audit=audit, lock_registry=lock_registry)
     return _detail_out(execution)
 
 

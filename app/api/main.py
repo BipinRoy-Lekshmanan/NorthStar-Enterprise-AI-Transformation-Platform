@@ -40,6 +40,7 @@ from app.config.settings import (
 )
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import build_default_rag_service
+from app.resilience.concurrency import LockRegistry
 from app.telemetry.tracing import configure_tracing
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
     users file is missing/malformed. More singletons (`WorkflowEngine`,
     stores) are added here in later steps."""
     app.state.started_at = datetime.now(timezone.utc)
+    app.state.lock_registry = LockRegistry()
 
     telemetry_settings = TelemetrySettings.from_env()
     configure_tracing(

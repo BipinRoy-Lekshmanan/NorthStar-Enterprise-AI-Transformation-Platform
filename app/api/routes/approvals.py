@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.dependencies.services import get_audit_store, get_workflow_engine
+from app.api.dependencies.services import get_audit_store, get_lock_registry, get_workflow_engine
 from app.api.schemas.approvals import ApprovalDecisionRequest, PendingApprovalOut, build_pending_approval_out
 from app.api.schemas.workflows import ExecutionDetailOut, build_execution_detail_out
 from app.api.services.approval_service import list_pending_approvals, record_approval
@@ -21,6 +21,7 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.resilience.concurrency import LockRegistry
 from app.workflows.engine import WorkflowEngine
 from app.workflows.synthesis import dedupe_citations
 
@@ -57,10 +58,13 @@ def decide_approval_route(
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     audit_store: AuditStore = Depends(get_audit_store),
+    lock_registry: LockRegistry = Depends(get_lock_registry),
     user: User = Depends(require_role(Role.REVIEWER)),
 ) -> ExecutionDetailOut:
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     reviewer = body.reviewer or user.username
-    execution = record_approval(engine, execution_id, body.decision, reviewer, body.comments, audit=audit)
+    execution = record_approval(
+        engine, execution_id, body.decision, reviewer, body.comments, audit=audit, lock_registry=lock_registry,
+    )
     return _detail_out(execution)

@@ -32,6 +32,10 @@ DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDING_DIMENSIONS = 512
 DEFAULT_VECTOR_STORE_DIR = "vector_store"
 DEFAULT_RETRIEVAL_TOP_K = 5
+# Milestone 8: caps concurrent in-flight calls to the embedding provider --
+# a burst of concurrent requests queues (blocks briefly) rather than
+# overwhelming the provider or exhausting its own connection pool.
+DEFAULT_EMBEDDING_MAX_CONCURRENT_REQUESTS = 5
 
 DEFAULT_LLM_PROVIDER = "fake"
 DEFAULT_OPENAI_LLM_MODEL = "gpt-4o-mini"
@@ -44,6 +48,9 @@ DEFAULT_CONTEXT_MIN_SCORE = 0.1
 DEFAULT_MAX_QUESTION_LENGTH = 2000
 DEFAULT_INSUFFICIENT_CONTEXT_MIN_RESULTS = 1
 DEFAULT_INSUFFICIENT_CONTEXT_MIN_SCORE = 0.15
+# Milestone 8: caps concurrent in-flight calls to the LLM provider -- same
+# rationale as DEFAULT_EMBEDDING_MAX_CONCURRENT_REQUESTS above.
+DEFAULT_LLM_MAX_CONCURRENT_REQUESTS = 5
 
 DEFAULT_ROUTER_RETRIEVAL_TOP_K = 12
 DEFAULT_ROUTER_MIN_CONFIDENCE = 0.15
@@ -200,6 +207,7 @@ class RetrievalSettings:
     vector_store_dir: Path
     retrieval_top_k: int
     openai_api_key: str | None
+    embedding_max_concurrent_requests: int = DEFAULT_EMBEDDING_MAX_CONCURRENT_REQUESTS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "RetrievalSettings":
@@ -219,6 +227,9 @@ class RetrievalSettings:
         vector_store_dir = _resolve(env.get("VECTOR_STORE_DIR", DEFAULT_VECTOR_STORE_DIR))
         retrieval_top_k = _parse_int(env, "RETRIEVAL_TOP_K", DEFAULT_RETRIEVAL_TOP_K)
         openai_api_key = env.get("OPENAI_API_KEY") or None
+        embedding_max_concurrent_requests = _parse_int(
+            env, "EMBEDDING_MAX_CONCURRENT_REQUESTS", DEFAULT_EMBEDDING_MAX_CONCURRENT_REQUESTS
+        )
 
         settings = cls(
             embedding_provider=embedding_provider,
@@ -227,6 +238,7 @@ class RetrievalSettings:
             vector_store_dir=vector_store_dir,
             retrieval_top_k=retrieval_top_k,
             openai_api_key=openai_api_key,
+            embedding_max_concurrent_requests=embedding_max_concurrent_requests,
         )
         settings.validate()
         return settings
@@ -257,6 +269,12 @@ class RetrievalSettings:
                 "EMBEDDING_PROVIDER is 'openai' but OPENAI_API_KEY is not set."
             )
 
+        if self.embedding_max_concurrent_requests <= 0:
+            raise ConfigurationError(
+                "EMBEDDING_MAX_CONCURRENT_REQUESTS must be a positive integer, "
+                f"got {self.embedding_max_concurrent_requests}."
+            )
+
 
 @dataclass(frozen=True)
 class RagSettings:
@@ -274,6 +292,7 @@ class RagSettings:
     max_question_length: int
     insufficient_context_min_results: int
     insufficient_context_min_score: float
+    llm_max_concurrent_requests: int = DEFAULT_LLM_MAX_CONCURRENT_REQUESTS
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "RagSettings":
@@ -302,6 +321,9 @@ class RagSettings:
             ),
             insufficient_context_min_score=_parse_float(
                 env, "INSUFFICIENT_CONTEXT_MIN_SCORE", DEFAULT_INSUFFICIENT_CONTEXT_MIN_SCORE
+            ),
+            llm_max_concurrent_requests=_parse_int(
+                env, "LLM_MAX_CONCURRENT_REQUESTS", DEFAULT_LLM_MAX_CONCURRENT_REQUESTS
             ),
         )
         settings.validate()
@@ -361,6 +383,12 @@ class RagSettings:
             raise ConfigurationError(
                 "INSUFFICIENT_CONTEXT_MIN_SCORE must be zero or positive, got "
                 f"{self.insufficient_context_min_score}."
+            )
+
+        if self.llm_max_concurrent_requests <= 0:
+            raise ConfigurationError(
+                "LLM_MAX_CONCURRENT_REQUESTS must be a positive integer, "
+                f"got {self.llm_max_concurrent_requests}."
             )
 
 
