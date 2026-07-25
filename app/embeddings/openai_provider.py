@@ -15,13 +15,17 @@ from app.embeddings.vectorizer import (
     EmbeddingProviderInfo,
     EmbeddingRateLimitError,
     EmbeddingTimeoutError,
-    retry_with_backoff,
 )
+from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from app.resilience.retry import retry_with_backoff
+from app.telemetry.metrics import provider_failures_total
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 30.0
 _DEFAULT_BATCH_SIZE = 100
+_PROVIDER_NAME = "openai_embedding"
+_RETRYABLE_ERRORS = (EmbeddingRateLimitError, EmbeddingTimeoutError)
 
 
 class OpenAIEmbeddingProvider:
@@ -35,6 +39,7 @@ class OpenAIEmbeddingProvider:
         timeout: float = _DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = 3,
         batch_size: int = _DEFAULT_BATCH_SIZE,
+        circuit_breaker: CircuitBreaker | None = None,
     ):
         try:
             from openai import OpenAI
@@ -48,6 +53,7 @@ class OpenAIEmbeddingProvider:
         self._dimensions = dimensions
         self._max_retries = max_retries
         self._batch_size = batch_size
+        self._circuit_breaker = circuit_breaker or CircuitBreaker(name=_PROVIDER_NAME)
 
     @property
     def info(self) -> EmbeddingProviderInfo:
@@ -83,7 +89,19 @@ class OpenAIEmbeddingProvider:
                 raise self._translate_error(exc) from exc
             return [item.embedding for item in response.data]
 
-        return retry_with_backoff(call, max_retries=self._max_retries)
+        def call_with_retry() -> list[list[float]]:
+            return retry_with_backoff(
+                call, max_retries=self._max_retries, retryable=_RETRYABLE_ERRORS, provider=_PROVIDER_NAME,
+            )
+
+        try:
+            return self._circuit_breaker.call(call_with_retry, failure_exceptions=_RETRYABLE_ERRORS)
+        except CircuitBreakerOpenError as exc:
+            provider_failures_total.labels(provider=_PROVIDER_NAME, error_type="CircuitBreakerOpen").inc()
+            raise EmbeddingProviderError(str(exc)) from exc
+        except EmbeddingProviderError as exc:
+            provider_failures_total.labels(provider=_PROVIDER_NAME, error_type=type(exc).__name__).inc()
+            raise
 
     @staticmethod
     def _translate_error(exc: Exception) -> Exception:

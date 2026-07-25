@@ -62,6 +62,14 @@ provider_failures_total = Counter(
     "provider_failures_total", "Model/embedding provider call failures.", ["provider", "error_type"],
     registry=REGISTRY,
 )
+provider_retries_total = Counter(
+    "provider_retries_total", "Bounded retry attempts against a provider call.", ["provider", "error_type"],
+    registry=REGISTRY,
+)
+circuit_breaker_state = Gauge(
+    "circuit_breaker_state", "Circuit breaker state (0=closed, 1=open, 2=half_open).", ["provider"],
+    registry=REGISTRY,
+)
 
 # -- Advisors / routing -----------------------------------------------------------------------------
 

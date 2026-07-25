@@ -13,11 +13,13 @@ import types
 
 import pytest
 
+from app.resilience.circuit_breaker import CircuitBreaker
 from app.services.llm_service import (
     ModelConfigurationError,
     ModelProviderError,
     ModelRateLimitError,
     ModelTimeoutError,
+    ModelUnavailableError,
 )
 
 
@@ -209,6 +211,39 @@ def test_unexpected_error_translates_to_generic_provider_error(monkeypatch):
 
     with pytest.raises(ModelProviderError):
         provider.generate(system_prompt="s", user_prompt="u")
+
+
+def test_repeated_rate_limit_failures_open_the_circuit_breaker(monkeypatch):
+    def behavior(kwargs):
+        raise RateLimitError("slow down")
+
+    breaker = CircuitBreaker(name="test", failure_threshold=2)
+    provider = _make_provider(monkeypatch, behavior, max_retries=0, circuit_breaker=breaker)
+
+    for _ in range(2):
+        with pytest.raises(ModelRateLimitError):
+            provider.generate(system_prompt="s", user_prompt="u")
+
+    # Breaker is now open -- the next call fails fast as ModelUnavailableError,
+    # translated from CircuitBreakerOpenError, without ever calling the client.
+    with pytest.raises(ModelUnavailableError):
+        provider.generate(system_prompt="s", user_prompt="u")
+
+
+def test_repeated_authentication_failures_do_not_open_the_circuit_breaker(monkeypatch):
+    """A permanent config error (bad key) should never get masked behind
+    "circuit breaker open" -- it isn't in the breaker's failure set, so
+    it always propagates with its own specific, actionable type."""
+
+    def behavior(kwargs):
+        raise AuthenticationError("bad key")
+
+    breaker = CircuitBreaker(name="test", failure_threshold=1)
+    provider = _make_provider(monkeypatch, behavior, max_retries=0, circuit_breaker=breaker)
+
+    for _ in range(5):
+        with pytest.raises(ModelConfigurationError, match="authentication failed"):
+            provider.generate(system_prompt="s", user_prompt="u")
 
 
 def test_api_key_never_appears_in_log_output(monkeypatch, caplog):

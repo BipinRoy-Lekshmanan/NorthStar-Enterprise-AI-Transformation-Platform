@@ -16,14 +16,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import time
 from dataclasses import dataclass
-from typing import Callable, Protocol, TypeVar
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-_T = TypeVar("_T")
 
 
 class EmbeddingProviderError(Exception):
@@ -63,32 +61,6 @@ class EmbeddingProvider(Protocol):
     @property
     def info(self) -> EmbeddingProviderInfo:
         ...
-
-
-def retry_with_backoff(
-    func: Callable[[], _T],
-    *,
-    max_retries: int = 3,
-    base_delay_seconds: float = 0.5,
-    retryable: tuple[type[Exception], ...] = (EmbeddingRateLimitError, EmbeddingTimeoutError),
-) -> _T:
-    """Run `func`, retrying transient failures with capped exponential backoff.
-
-    Shared by network-backed providers (see `openai_provider.py`).
-    `LocalHashingEmbeddingProvider` has no I/O failure mode and does not
-    use this.
-    """
-    attempt = 0
-    while True:
-        try:
-            return func()
-        except retryable:
-            attempt += 1
-            if attempt > max_retries:
-                raise
-            delay = base_delay_seconds * (2 ** (attempt - 1))
-            logger.warning("Embedding call failed, retrying in %.1fs (attempt %d/%d)", delay, attempt, max_retries)
-            time.sleep(delay)
 
 
 class LocalHashingEmbeddingProvider:

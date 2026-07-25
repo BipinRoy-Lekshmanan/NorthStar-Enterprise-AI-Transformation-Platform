@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 import time
 
-from app.embeddings.vectorizer import retry_with_backoff
+from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from app.resilience.retry import retry_with_backoff
 from app.services.llm_service import (
     InvalidModelResponseError,
     ModelConfigurationError,
@@ -22,8 +23,11 @@ from app.services.llm_service import (
     ModelTimeoutError,
     ModelUnavailableError,
 )
+from app.telemetry.metrics import provider_failures_total
 
 logger = logging.getLogger(__name__)
+
+_PROVIDER_NAME = "openai_llm"
 
 
 class OpenAIModelProvider:
@@ -35,6 +39,7 @@ class OpenAIModelProvider:
         model: str = "gpt-4o-mini",
         timeout: float = 30.0,
         max_retries: int = 3,
+        circuit_breaker: CircuitBreaker | None = None,
     ):
         try:
             from openai import OpenAI
@@ -46,6 +51,11 @@ class OpenAIModelProvider:
         self._client = OpenAI(api_key=api_key, timeout=timeout)
         self._model = model
         self._max_retries = max_retries
+        # Per-instance by default (not a shared global) -- the provider
+        # itself is normally a process-wide singleton already, and this
+        # keeps test instances isolated from one another with no shared
+        # mutable state to reset between tests.
+        self._circuit_breaker = circuit_breaker or CircuitBreaker(name=_PROVIDER_NAME)
 
     def generate(
         self,
@@ -75,12 +85,25 @@ class OpenAIModelProvider:
             except Exception as exc:
                 raise self._translate_error(exc) from exc
 
+        def call_with_retry():
+            return retry_with_backoff(
+                call,
+                max_retries=self._max_retries,
+                retryable=(ModelRateLimitError, ModelTimeoutError, ModelUnavailableError),
+                provider=_PROVIDER_NAME,
+            )
+
         start = time.perf_counter()
-        response = retry_with_backoff(
-            call,
-            max_retries=self._max_retries,
-            retryable=(ModelRateLimitError, ModelTimeoutError, ModelUnavailableError),
-        )
+        try:
+            response = self._circuit_breaker.call(
+                call_with_retry, failure_exceptions=(ModelRateLimitError, ModelTimeoutError, ModelUnavailableError),
+            )
+        except CircuitBreakerOpenError as exc:
+            provider_failures_total.labels(provider=_PROVIDER_NAME, error_type="CircuitBreakerOpen").inc()
+            raise ModelUnavailableError(str(exc)) from exc
+        except ModelProviderError as exc:
+            provider_failures_total.labels(provider=_PROVIDER_NAME, error_type=type(exc).__name__).inc()
+            raise
         latency_ms = (time.perf_counter() - start) * 1000
 
         if not response.choices:
