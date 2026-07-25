@@ -173,11 +173,71 @@ detection still requires literal marker phrases in advisor answer text
 and cannot fire under the default offline `FakeModelProvider` (carried
 from Milestone 6, unchanged by this milestone).
 
-## Milestone 8+ — not started
+## Milestone 8 — Production Hardening & Operations ✅ Complete
 
-Nothing beyond Milestone 7 has been scoped yet. Natural next
+Hardens Milestones 1–7 for controlled deployment and operations — no
+new AI reasoning capabilities. Containerization (`Dockerfile.api`,
+`Dockerfile.ui`, `docker-compose.yml`), CI (`.github/workflows/ci.yml`)
+and illustrative Kubernetes manifests (`deploy/k8s/`); structured JSON
+logging with request-id correlation, Prometheus metrics, OpenTelemetry
+tracing (disabled by default); retry + circuit breaker + graceful
+degradation + bounded concurrency; per-category rate limiting;
+`app/db/` (SQLAlchemy + Alembic) backing a hash-chained SQLite audit
+store, idempotency records, and background-operation tracking;
+backup/restore/cleanup and knowledge-index recovery CLIs; security
+headers, a secret-provider abstraction, constant-time auth, data-
+classification guardrails, and multi-tenant boundary prep fields;
+`/health/ready` + `/platform/info`; feature flags, capacity-limit
+consolidation, a TTL cache; cost observability + usage budgets;
+privacy configuration; release validation (`app/release/validate.py`)
++ CycloneDX SBOM generation; and a hand-rolled async load-test
+harness (`app/loadtest/`).
+
+Delivered in new `app/resilience/`, `app/db/`, `app/operations/`,
+`app/release/`, `app/loadtest/`, `app/cache/` packages (the last two
+were empty Milestone 1-era placeholders); extensions to
+`app/telemetry/` (also a prior placeholder), `app/config/`, `app/auth/`,
+`app/audit/`, and `app/api/`; plus `pyproject.toml`,
+`requirements-dev.txt`, `Dockerfile.api`, `Dockerfile.ui`,
+`docker-compose.yml`, `.dockerignore`, `.github/workflows/ci.yml`, and
+`deploy/k8s/*.yaml`. See root `README.md` for the full architecture
+diagrams and design rationale. 29 commits, 334 new tests (864 total).
+
+Two real defects were found and fixed during the build itself, not
+after: a **Zip Slip vulnerability (CWE-22)** in `restore_backup()`,
+caught by security review before shipping and covered by a regression
+test with a crafted malicious archive entry; and an **`APP_VERSION`
+staleness bug** (the constant had drifted a release behind
+`pyproject.toml`), caught by hand while building `/platform/info` and
+then turned into a permanent automated regression guard in
+`app.release.validate`. Verified against 7 end-to-end operational
+scenarios run live against a real running server (circuit breaker,
+restricted-document filtering, rate limiting, idempotency, metrics
+scrape, backup/restore integrity, release validation) — see root
+`README.md` for details.
+
+**Known limitation, disclosed rather than glossed over**: Docker and
+`kubectl` are not installed in the sandbox these artifacts were
+authored in, so the Dockerfiles, `docker-compose.yml`, and every
+`deploy/k8s/*.yaml` manifest could only be verified statically
+(paths exist, YAML parses, env vars trace correctly through
+`app.config.settings`) — never with a real `docker build`,
+`docker compose up`, or `kubectl apply`. CI's `docker-build` job is
+the first real build verification these Dockerfiles get, on every
+push. Carried-over limitations: the rate limiter, circuit breaker, and
+audit-adjacent in-memory state are all single-process (documented, not
+an oversight); the API's SQLite-backed persistence is single-writer,
+which is why it's deployed as a single replica; retrieval/routing/
+evaluation quality is still bounded by the default `local` lexical
+hashing embedding provider.
+
+## Milestone 9+ — not started
+
+Nothing beyond Milestone 8 has been scoped yet. Natural next
 candidates (not committed): LLM-as-judge evaluation of advisor/workflow
 answer *quality* (beyond the deterministic structural checks Milestones
-3, 6, and 7's evaluation persistence already do); containerized/cloud
-deployment (explicitly docs-only in Milestone 7's scope); a shared
-rate-limit/audit backend for a horizontally-scaled deployment.
+3, 6, and 7's evaluation persistence already do); a shared distributed
+rate-limit/circuit-breaker/lock backend for a horizontally-scaled
+deployment; a real multi-writer database to let the API scale past one
+replica; actually applying the Milestone 8 Kubernetes manifests against
+a real cluster.

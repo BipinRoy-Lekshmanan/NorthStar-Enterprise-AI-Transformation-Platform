@@ -21,6 +21,7 @@ observability. It is being built incrementally, milestone by milestone.
 | **5** | Advisor router & controlled multi-advisor synthesis | ✅ Complete |
 | **6** | Enterprise workflow orchestration (5 review workflows) | ✅ Complete |
 | **7** | Enterprise AI Platform: FastAPI + Streamlit, RBAC, audit, evaluation persistence, export | ✅ Complete |
+| **8** | Production hardening & operations: containerization, observability, resilience, security, release controls | ✅ Complete |
 
 ## Milestone 1 — Knowledge Ingestion Foundation
 
@@ -1348,6 +1349,413 @@ on unit tests alone. The whole platform runs fully offline by default
 sample, and test in this repository is reproducible with zero API
 keys and zero network access.
 
+## Milestone 8 — Production Hardening & Operations
+
+Hardens everything built in Milestones 1–7 for controlled deployment
+and operations — **no new AI reasoning capabilities**. Every change
+here is observability, resilience, security, persistence, release
+tooling, or deployment packaging around the existing stack. The
+platform still runs fully offline by default
+(`LLM_PROVIDER=fake`, `EMBEDDING_PROVIDER=local`); this milestone is
+entirely about what happens *around* that stack once it needs to run
+somewhere other than a developer's own machine.
+
+```mermaid
+flowchart TB
+    subgraph Client["Clients"]
+        Browser["Browser (Streamlit UI)"]
+        Ops["Operator (curl / python -m app.* CLIs)"]
+    end
+
+    Browser -- "8501/tcp" --> UI
+    Ops -- "8000/tcp" --> API
+
+    subgraph Compose["docker-compose.yml (local) / deploy/k8s (illustrative)"]
+        direction TB
+        UI["ui: Dockerfile.ui<br/>Streamlit, stateless, 2 replicas in k8s"]
+        API["api: Dockerfile.api<br/>FastAPI + Uvicorn, 1 replica<br/>(SQLite is single-writer)"]
+        UI -- "API_BASE_URL, X-API-Key" --> API
+        Prom["prometheus (optional --profile observability)<br/>scrapes GET /metrics"]
+        API -.-> Prom
+    end
+
+    API --> Vol[("Volumes / PVCs:<br/>data/ (SQLite: audit, idempotency,<br/>operations, usage) + auth/users.json (Secret)<br/>vector_store/ workflow_store/<br/>evaluation_runs/ audit_log/")]
+
+    subgraph External["Optional real providers (LLM_PROVIDER=openai)"]
+        OpenAI["OpenAI API"]
+    end
+    API -. "retry + circuit breaker,<br/>disabled by default" .-> OpenAI
+
+    CI[".github/workflows/ci.yml<br/>ruff, bandit, pip-audit, pytest (blocking)<br/>mypy (advisory) · docker build (real)"] -.->|"builds, doesn't push"| Compose
+```
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant MW as Middleware (security headers,<br/>rate limit, request context)
+    participant Route as API route
+    participant Svc as app.api.services
+    participant Provider as OpenAIModelProvider
+    participant CB as CircuitBreaker
+    participant Audit as AuditStore (SQLite, hash-chained)
+    participant Metrics as Prometheus counters
+
+    Client->>MW: POST /query (X-API-Key, Idempotency-Key)
+    MW->>MW: rate limit check: (actor, category) window
+    alt over limit
+        MW-->>Client: 429 + Retry-After
+        MW->>Audit: record "rate_limit_exceeded"
+        MW->>Metrics: rate_limit_rejections_total++
+    else within limit
+        MW->>Route: forward request
+        Route->>Svc: check_idempotency(key) -- cached? return it, don't re-run
+        Svc->>Provider: generate(...)
+        Provider->>CB: call(call_with_retry)
+        alt breaker closed, call fails (transient)
+            CB->>Provider: retry with backoff (bounded)
+            Provider->>Metrics: provider_retries_total++
+        end
+        alt failure_threshold reached
+            CB->>CB: state: closed -> open
+            CB->>Metrics: circuit_breaker_state=1
+            CB-->>Svc: CircuitBreakerOpenError (fails fast, no call attempted)
+            Svc->>Svc: fall back to retrieval-only + warning
+        end
+        Svc->>Audit: record_from_context(action, outcome)
+        Svc-->>Client: 200 (grounded answer, or degraded + warning)
+    end
+```
+
+### Configuration & environment validation
+
+`app/config/environment.py` (`Environment` enum: local/development/
+staging/production, `is_production_like`) plus
+`app/config/production_checks.py`'s `validate_production_readiness()`
+— extends every existing settings class's own `validate()` with
+*cross-cutting* checks that only matter at deployment time: default/
+example credentials present outside local/dev/test, an
+`ALLOWED_LLM_MODELS`/`ALLOWED_EMBEDDING_MODELS` allow-list violation,
+and every configured directory (vector store, workflow store, audit
+log, evaluation runs, the SQLite database's parent) actually writable.
+`python -m app.config validate|show --redacted` — `show --redacted`
+prints the fully resolved settings bundle with every secret-shaped
+value masked, for safely pasting into a support ticket.
+
+### Structured logging, metrics, tracing
+
+- **Logging** (`app/config/logging.py`) — JSON mode
+  (`LOG_FORMAT=json`) alongside the existing plain-text formatter; a
+  `contextvars`-based request ID is injected into every log record
+  emitted during a request, correlating an API call's log lines
+  end-to-end without threading a parameter through every function
+  call. Incoming `X-Request-ID` headers are length-capped before use.
+- **Metrics** (`app/telemetry/metrics.py`, `GET /metrics`) — every
+  Prometheus collector lives in one module on its own
+  `CollectorRegistry` (never the global default, so importing this
+  module never has side effects on unrelated code); counters/
+  histograms are incremented from `app/api/services/*.py` around
+  calls into the unchanged Milestone 1–6 modules, never inside them.
+  Dashboard JSON specs (Grafana-importable, not a provisioned running
+  Grafana) live in `docs/operations/dashboards/`.
+- **Tracing** (`app/telemetry/tracing.py`) — OpenTelemetry API + SDK,
+  **disabled by default** (`ENABLE_TRACING=false`); when enabled,
+  spans wrap `RagService.ask`, advisor/workflow execution, and
+  evaluation cases at the services boundary, exporting to a local
+  OTLP collector or the console.
+
+### Resilience: retry, circuit breaker, graceful degradation, concurrency
+
+- **Retry with backoff** (`app/resilience/retry.py`) — bounded
+  exponential backoff with full jitter, retrying only genuinely
+  transient exceptions (rate limit, timeout, unavailable) — a bad API
+  key or unsupported model fails on the first attempt, never retried.
+- **Circuit breaker** (`app/resilience/circuit_breaker.py`) —
+  `closed → open → half_open → closed | open`, per named dependency,
+  **single-process** (each replica tracks failures independently — an
+  explicit, documented scope limit, not an oversight). Wired into
+  `OpenAIModelProvider`/`OpenAIEmbeddingProvider`; wrapping code lives
+  in the provider adapters, never in route handlers.
+- **Graceful degradation** (`app.api.services.query_service`) — a
+  provider outage (including an open circuit breaker) falls back to
+  retrieval-only excerpts with a clear warning, never a fabricated
+  answer and never a hard 502; evaluator runs isolate a single failing
+  case rather than aborting the whole run.
+- **Concurrency controls** (`app/resilience/concurrency.py`) —
+  `LockRegistry` (non-blocking named locks: a second knowledge rebuild
+  or a second resume/approve of the same execution is rejected
+  immediately with a clear conflict, never silently queued) and
+  `BoundedConcurrency` (a bounded semaphore capping concurrent calls to
+  a given provider — a legitimate burst queues briefly rather than
+  overwhelming the provider's connection pool).
+
+### Rate limiting
+
+`RateLimitMiddleware` extended from Milestone 7's single global limit
+to **per-category** limits (`query`, `advisor`, `workflow`,
+`evaluation`, `administration`, falling back to a `default` category),
+keyed by `(actor, category)` where actor is the API key (or client IP
+if none). Over the limit returns `429` with a `Retry-After` header and
+records a `rate_limit_exceeded` audit event — verified live (see
+End-to-end validation below).
+
+### Persistence: SQLite + Alembic, hash-chained audit trail
+
+New `app/db/` package (SQLAlchemy Core/ORM + Alembic migrations,
+`python -m app.db upgrade|current|history`) backs three genuinely new
+concerns with no prior persistence layer: **audit events**,
+**idempotency records**, and **operational metadata** (background
+operations, usage/cost events). `WorkflowStore`/`EvaluationRunStore`
+(Milestones 6/7, already tested, atomic temp-write-then-rename JSON)
+are deliberately left as-is — migrating them would be a disproportionate
+rewrite for a hardening milestone.
+
+`AuditStore` is rewritten onto SQLite with a **hash-chained** ledger:
+every event's `current_hash` covers its own fields plus the previous
+event's hash, so any tampering or gap is detectable by re-walking the
+chain (`python -m app.audit verify`) — live-verified end-to-end,
+including after a full backup/restore round trip.
+
+### Idempotency
+
+`Idempotency-Key` header support (`app/resilience/idempotency.py`) on
+workflow execute/resume/approval-decide and knowledge ingest/index: a
+repeated request with the same key and endpoint returns the original
+cached response without re-running the operation. Live-verified: two
+identical `POST /workflows/{id}/execute` calls with the same key
+returned the same `execution_id`, and the executions list confirmed
+only one execution actually ran.
+
+### Operations: background jobs, backup/restore, index recovery
+
+- **Background operations** (`app/operations/background.py`,
+  `POST /operations/rebuild`, `GET /operations[/{id}]`) — long-running
+  work (currently knowledge rebuild) runs on a background thread,
+  tracked in the `operations` table, so the triggering request returns
+  `202 Accepted` immediately instead of blocking on a full reindex.
+- **Backup / restore / cleanup**
+  (`python -m app.operations backup|restore|cleanup`) — a single
+  `.zip` archive (manifest + database + vector store + workflow store
+  + evaluation runs; deliberately excludes the KB source documents and
+  the users file). The database is captured via SQLite's own backup
+  API, not a raw file copy, so it stays consistent even against a
+  concurrently open, live server (verified live). **A Zip Slip
+  vulnerability (CWE-22) was found and fixed** before shipping:
+  `restore_backup()` now validates every archive member's resolved
+  path stays within the staging directory before extracting, with a
+  regression test using a crafted `../../evil.txt` entry.
+- **Knowledge index recovery** (`python -m app.knowledge verify-index`)
+  — read-only comparison of the vector store's indexed chunk IDs
+  against what ingestion would produce today, reporting missing/stale/
+  corrupted entries without changing anything.
+
+### Security hardening
+
+- **Security headers** (`app/api/middleware/security_headers.py`) —
+  strict CSP for the JSON API, a relaxed CSP for `/docs`/`/redoc`
+  (which load Swagger UI assets from a CDN).
+  `Content-Security-Policy` and a fixed
+  `X-Content-Type-Options`/`X-Frame-Options`/`Referrer-Policy` set on
+  every response.
+- **Constant-time auth** (`app/auth/dependencies.py`) — API-key lookup
+  now checks every configured key via `hmac.compare_digest()` with no
+  short-circuit, so a wrong key takes the same time whether it's
+  close to a real one or not; `User.enabled` (default `True`) allows
+  revoking access without deleting a user record; failed attempts are
+  logged (a truncated SHA-256 fingerprint of the key, never the raw
+  key) and counted (`auth_failures_total{reason}`).
+- **Secret-provider abstraction** (`app/config/secrets.py`) —
+  formalizes that every settings class's existing `env: Mapping[str,
+  str] | None` parameter *is* the vault-integration extension point;
+  `EnvSecretProvider` (today's default) and `StaticSecretProvider`
+  (for tests/vault adapters) both satisfy one `SecretProvider`
+  protocol.
+- **Data-classification guardrails**
+  (`app.api.services.knowledge_service`) — documents marked
+  `classification: Restricted` in frontmatter are excluded from
+  listings, search, and citations for every role below administrator;
+  live-verified: a viewer's document list excludes a seeded
+  `Restricted` document that an administrator's list includes.
+- **Multi-tenant boundary prep** — optional `organization_id` on
+  `AuditEvent`/`EvaluationRun`, threaded through the hash chain and
+  audit context; documented prep, not an enforced tenant boundary.
+
+### Platform diagnostics, feature flags, cost observability, privacy
+
+- **`GET /health/ready`** — unauthenticated (an orchestrator's
+  readiness probe can't send credentials), returns `503` (not just
+  `ready: false` in the body) when a dependency check fails, since
+  that's what actually gates traffic routing.
+- **`GET /platform/info`** — version, environment, prompt version, and
+  the database's actual current Alembic schema revision.
+- **Feature flags** (`app/config/feature_flags.py`,
+  `FEATURE_FLAGS=name=true,other=false`) gate `POST /operations/rebuild`
+  (404 when disabled); **capacity-limit consolidation**
+  (`python -m app.config limits`) aggregates every configured limit
+  across 5+ settings classes into one snapshot; a **TTL cache**
+  (`app/cache/ttl_cache.py`) avoids re-walking the knowledge base on
+  every catalog read, with explicit invalidation on ingest/index/rebuild.
+- **Cost observability + usage budgets** (`app/telemetry/token_usage.py`,
+  `cost_tracker.py`) — a static per-model pricing table estimates cost
+  from each real `ModelResponse`'s token counts (returns `None`, not
+  `$0`, for `fake`/unrecognized models); an optional
+  `DAILY_BUDGET_USD` enforces a rolling UTC-day spend cap, returning
+  `429 BUDGET_EXCEEDED` once exhausted; `GET /platform/usage` reports
+  today's spend and remaining budget.
+- **Privacy configuration** (`app/config/privacy.py`) —
+  `INCLUDE_CITATION_EXCERPTS` (default `true`) redacts citation excerpt
+  text (keeping source/document/score) when disabled, applied
+  generically to both internal `Citation` and API `CitationOut` models.
+
+### Release validation & SBOM
+
+`app/release/` — `python -m app.release validate` extends the
+production-readiness checks with two release-specific ones:
+**version consistency** between `app.api.version.APP_VERSION` and
+`pyproject.toml`'s `[project].version` (a permanent regression guard
+for a real staleness bug this milestone found and fixed — `APP_VERSION`
+sat one release behind for a while, caught only by hand while building
+`/platform/info`), and **schema-migration state** (the target
+database's actually-applied Alembic revision vs. the code's expected
+HEAD). Same `READY` / `READY_WITH_WARNINGS` / `NOT_READY` convention
+as `app.config validate`. `python -m app.release sbom` generates a
+CycloneDX SBOM from the *installed* environment (real exact versions
+for every dependency, not "no pinned version" warnings against the
+range-pinned `requirements.txt`).
+
+### Containerization & deployment
+
+- **`Dockerfile.api`** / **`Dockerfile.ui`** — two-stage builds
+  (dependencies installed into a throwaway builder venv, only the venv
+  copied into the slim runtime stage), non-root user, `HEALTHCHECK`
+  against the real `/api/v1/health` / Streamlit health endpoint.
+- **`docker-compose.yml`** — `api` + `ui` services, named volumes for
+  everything the API generates at runtime, `depends_on:
+  condition: service_healthy`, an optional
+  `--profile observability` Prometheus service.
+- **`deploy/k8s/*.yaml`** — illustrative plain-YAML manifests (not a
+  Helm chart): namespace, ConfigMaps, example Secrets (placeholder
+  values only), PVCs, Deployment/Service pairs, and NetworkPolicy/
+  PodDisruptionBudget examples. The API intentionally runs
+  `replicas: 1` with `strategy: Recreate` — SQLite and the local
+  vector/workflow stores are single-writer, so scaling past 1 needs a
+  real multi-writer database and shared storage first, which is
+  outside this milestone's persistence scope; the stateless UI runs 2
+  replicas.
+- **`.github/workflows/ci.yml`** — ruff, bandit, pip-audit, and the
+  full pytest suite block merges; mypy runs advisory-only (7
+  milestones of code predate type-checking discipline); a
+  `docker-build` job builds both images for real on every push/PR.
+
+**Disclosed limitation, not glossed over**: Docker and `kubectl` are
+not installed in the sandbox these artifacts were authored in, so the
+Dockerfiles, `docker-compose.yml`, and every `deploy/k8s/*.yaml` file
+could only be verified statically here (COPY paths exist, YAML parses,
+env vars trace correctly through `app.config.settings`'s real parsing
+logic) — never with a real `docker build`, `docker compose up`, or
+`kubectl apply --dry-run`. CI's `docker-build` job is the first *real*
+build verification these Dockerfiles get, on every push.
+
+### Load testing
+
+`app/loadtest/` — a hand-rolled `httpx.AsyncClient` + `asyncio.gather`
+harness (`python -m app.loadtest run --duration --concurrency
+--api-key ... --output report.json`) over a weighted mix of real
+endpoints, rather than adding a third-party tool (locust, k6) for one
+milestone's worth of load testing. `run_load_test()` accepts an
+optional ASGI transport, so the same code path is exercised
+in-process by the test suite and against a real socket by the CLI.
+
+### Tests
+
+**334 new tests** across config/environment validation, structured
+logging, metrics, resilience (retry/circuit breaker/concurrency),
+rate limiting, `app/db`, idempotency, the hash-chained audit store,
+background operations, backup/restore/cleanup, index recovery,
+security headers, secrets, auth hardening, data classification,
+multi-tenant fields, platform diagnostics, feature flags/limits/cache,
+cost tracking, privacy, release validation, and the load-test harness.
+**864 tests total** (530 from Milestones 1–7 + 334 new).
+
+### End-to-end validation (7 scenarios, run live)
+
+1. **Circuit breaker** — 5 simulated failures against the real
+   `OpenAIModelProvider` class (its innermost HTTP call replaced, no
+   real network) tripped the breaker; the 6th call failed fast with
+   zero further HTTP attempts, proven via the real
+   `circuit_breaker_state`/`provider_failures_total` Prometheus
+   metrics and the expected log lines.
+2. **Restricted-document filtering** — a viewer's document list
+   excluded a seeded `Restricted` document that an administrator's
+   list included.
+3. **Rate limiting** — the 4th query within a 3/minute test window
+   returned `429` with `Retry-After: 60`; both rejections were
+   recorded as `rate_limit_exceeded` audit events.
+4. **Idempotency** — two workflow-execute calls with the same
+   `Idempotency-Key` returned the identical `execution_id`; the
+   executions list confirmed only one execution actually ran.
+5. **Metrics scrape** — `GET /metrics` against the live server
+   returned real Prometheus exposition text reflecting the exact
+   requests made in scenarios 2–4.
+6. **Backup / restore** — a live SQLite backup taken while the server
+   was running, restored into a clean directory: the workflow store
+   was byte-identical, every audit event was present, and
+   `python -m app.audit verify` confirmed hash-chain integrity on the
+   restored database.
+7. **Release / config validation** — `python -m app.release validate`
+   returned `READY` for both local and a simulated production
+   environment using real (non-example) credentials, and correctly
+   returned `NOT_READY` (exit 1) in simulated production when example
+   credentials were present.
+
+All 7 ran against a real running `python -m app.api` process (or, for
+the circuit breaker, the real provider class directly) in an isolated
+scratch environment — never the real project directories.
+
+### Limitations
+
+- **Docker/Kubernetes are unverified beyond static checks** — see
+  Containerization above. This is the one milestone limitation that's
+  a sandbox constraint, not a design choice.
+- **The rate limiter, circuit breaker, and audit-adjacent in-memory
+  state are all single-process** — a horizontally scaled deployment
+  needs a shared backend (Redis, a distributed lock service) for all
+  three; documented, not silently assumed away.
+- **The API's SQLite-backed persistence is single-writer**, which is
+  exactly why `deploy/k8s/04-api.yaml` runs one replica — scaling
+  requires a real multi-writer database first.
+- Same underlying `local`-embedding-provider limitation carried from
+  every prior milestone: retrieval/routing/evaluation quality is only
+  as good as the lexical hashing embedding.
+
+### Security considerations
+
+- Every safety consideration carried from Milestones 3, 6, and 7 still
+  applies, with constant-time auth comparison, security headers, and
+  data-classification filtering added on top.
+- `deploy/k8s/02-secrets.example.yaml` contains placeholder values
+  only, explicitly marked not-for-`kubectl apply`; real secrets belong
+  in a sealed-secrets/external-secrets controller or created directly
+  against the cluster, never committed to git.
+- The Zip Slip fix in `app/operations/backup.py` (found during this
+  milestone's own security review, before shipping) is covered by a
+  regression test using a crafted malicious archive entry.
+
+### Portfolio notes
+
+This milestone demonstrates: hardening a working system for
+operations without touching its reasoning logic; finding and fixing
+two real defects through the discipline itself, not luck — a Zip Slip
+vulnerability caught by security review before shipping, and an
+`APP_VERSION` staleness bug caught by hand and then turned into a
+permanent automated regression guard; live end-to-end verification of
+resilience, security, and persistence behavior (circuit breaker,
+rate limiting, idempotency, restricted-content filtering, backup/
+restore, release validation) against a real running server, not just
+unit tests; and transparent disclosure of a genuine sandbox
+limitation (no Docker/kubectl available to verify containerization
+and deployment artifacts beyond static checks) rather than overclaiming
+verification that didn't happen.
+
 ## Project layout
 
 ```
@@ -1423,7 +1831,30 @@ app/
                 Evaluation, Platform Operations, About),
                 components/forms.py (generic input_schema-driven
                 workflow form)                                        — Milestone 7
-  telemetry/, ...                                                    — placeholder for a later milestone
+  config/       + environment.py (Environment), production_checks.py,
+                logging.py (extended: JSON mode + request-id correlation),
+                secrets.py (SecretProvider), feature_flags.py, limits.py,
+                privacy.py, cli.py (validate|show|limits)              — Milestone 8
+  resilience/   retry.py, circuit_breaker.py, concurrency.py,
+                idempotency.py                                          — Milestone 8
+  telemetry/    metrics.py (Prometheus), tracing.py (OpenTelemetry,
+                disabled by default), token_usage.py, cost_tracker.py    — Milestone 8
+                (was an empty placeholder through Milestone 7)
+  cache/        ttl_cache.py                                             — Milestone 8
+                (was an empty placeholder through Milestone 7)
+  db/           models.py, engine.py, cli.py, migrations/ (Alembic)       — Milestone 8
+                (audit_events, idempotency_records, operations, usage_events)
+  operations/   background.py (OperationRunner), backup.py, cleanup.py,
+                cli.py                                                   — Milestone 8
+  knowledge/    verify.py (index recovery), cli.py                       — Milestone 8
+  release/      validate.py, sbom.py, cli.py                             — Milestone 8
+  loadtest/     harness.py, cli.py                                       — Milestone 8
+  auth/         + User.enabled, constant-time key comparison             — Milestone 8
+  audit/        store.py rewritten onto SQLite + hash chain,
+                cli.py (verify)                                          — Milestone 8
+  api/          + middleware/security_headers.py, routes/operations.py,
+                platform.py extended (/info, /usage), health.py extended
+                (/health/ready)                                           — Milestone 8
 enterprise_knowledge_base/   Northstar's Markdown knowledge base (source data)
 data/processed/               generated ingestion artifacts (git-ignored)
 data/evaluation_sets/         Milestone 3 + Milestone 6 seed evaluation datasets
@@ -1433,10 +1864,19 @@ examples/workflows/           Milestone 6 example/fixture workflow input files
 vector_store/                  generated embeddings + index (git-ignored)
 workflow_store/                 generated workflow execution state (git-ignored)
 evaluation_runs/                Milestone 7 persisted evaluation run history (git-ignored)
-audit_log/                      Milestone 7 append-only audit log (git-ignored)
+audit_log/                      Milestone 7 (unused for storage since the Milestone 8
+                                 SQLite rewrite; still validated as a writable directory)
+data/app.db                     Milestone 8 SQLite operational store (git-ignored)
+docs/operations/                Milestone 8 dashboards, deployment architecture,
+                                 runbooks, incident playbooks
+deploy/k8s/                     Milestone 8 illustrative Kubernetes manifests (not applied)
+.github/workflows/ci.yml        Milestone 8 CI pipeline
+Dockerfile.api, Dockerfile.ui,
+docker-compose.yml, .dockerignore   Milestone 8 containerization
+pyproject.toml, requirements-dev.txt Milestone 8 tool config + dev/lint/security tooling
 tests/                         pytest suite
 ```
 
-Everything not listed above as M1/M2/M3/M4/M5/M6/M7 is intentionally still
-an empty placeholder — scaffolding for milestones that haven't been
-built yet.
+Everything not listed above as M1/M2/M3/M4/M5/M6/M7/M8 is intentionally
+still an empty placeholder — scaffolding for milestones that haven't
+been built yet.

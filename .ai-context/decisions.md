@@ -492,3 +492,123 @@
   only became visible by checking the actual audit trail after
   triggering a real run against the live API, not from reading the
   code in isolation.
+
+## Milestone 8 — Production Hardening & Operations
+
+- **A public-vs-private cross-module helper convention was applied
+  consistently**: whenever a private (`_`-prefixed) helper needed to be
+  imported from a different module, it was renamed to public instead
+  of importing the underscore-prefixed name across a module boundary
+  (`_run_locked` → `run_locked`, `_alembic_config` → `alembic_config`,
+  `_finalize_workflow_metrics` → `finalize_workflow_metrics`,
+  `_parse_bool` → `parse_bool`). A leading underscore marking "private
+  to this file" stops being true the moment another module imports it
+  anyway; renaming makes the real contract visible instead of leaving
+  a lie in the name.
+- **Every new settings-backed singleton added to the API lifespan
+  needs its own tmp_path override in tests, or it silently writes into
+  the real project directory** — the exact same lesson from Milestone
+  7, hit again for real: a 68KB `data/app.db` appeared in the repo
+  after a test run because no test set `DATABASE_URL`, so
+  `DatabaseSettings.from_env()` fell back to the real path. Fixed with
+  an autouse `_isolated_database_url` fixture in `tests/conftest.py`
+  covering every test globally, since `DATABASE_URL` is touched by
+  every app-boot path, not just the tests that exercise `app.db`
+  directly.
+- **Alembic's `env.py` calling `fileConfig()` evicted pytest's
+  `caplog` handler** — `fileConfig()` unconditionally replaces the
+  root logger's handlers because `alembic.ini` declares an explicit
+  `[logger_root]` section, exactly the hazard
+  `app.config.logging.configure_logging()` was already written to
+  avoid. Fixed by skipping `fileConfig()` when `PYTEST_CURRENT_TEST`
+  is set.
+- **A Zip Slip vulnerability (CWE-22) was found in `restore_backup()`
+  during this milestone's own security review, before shipping** —
+  `zipfile.ZipFile.extractall()` will happily write outside the
+  target directory for a member name containing `../` components.
+  Fixed via `_safe_extract()`, which validates every archive member's
+  resolved path stays within the staging directory before extracting;
+  covered by a regression test using a crafted `../../evil.txt` entry.
+- **`build_engine()` didn't create a missing parent directory for a
+  `sqlite:///` URL** — unlike every other Milestone 1-7 store (which
+  `mkdir()`s its own directory), SQLite itself won't create one. A
+  real robustness gap, found and fixed while building `app/db/`.
+- **Restricted-document-filtering routes (data classification) briefly
+  turned a subset of the test suite from ~40s to ~9 minutes** — new
+  `get_ingestion_settings` dependencies injected into several route
+  modules, but the corresponding test fixtures never overrode it, so
+  `app.state.ingestion_settings` (set once at lifespan startup)
+  defaulted to the real, large `enterprise_knowledge_base/`. Fixed by
+  setting `KNOWLEDGE_BASE_DIRS` inside each affected test file's own
+  `client` fixture, pointing at that file's own already-seeded
+  tmp_path KB.
+- **`APP_VERSION` staleness**: `app/api/version.py` held a version
+  string one release behind `pyproject.toml`'s `[project].version`
+  for an entire milestone, caught only by hand while building
+  `/platform/info`. Rather than just fixing the value, this became a
+  permanent automated regression guard
+  (`app.release.validate._check_version_consistency()`) — the
+  discipline of "found by hand once" turning into "can't silently
+  recur" is the actual fix, not the one-line value correction.
+- **`/health/ready` initially reached into `request.app.state`
+  directly instead of using `Depends()`** — this made it impossible to
+  override the RAG service via `app.dependency_overrides` in tests the
+  same way every other route already supported. Caught before
+  committing and refactored to `Depends(get_rag_service)`/
+  `Depends(get_audit_store)`, keeping every route's testability
+  convention uniform.
+- **Env vars read once at API lifespan startup** (`FEATURE_FLAGS`,
+  `DAILY_BUDGET_USD`, `INCLUDE_CITATION_EXCERPTS`) **can't be
+  exercised through the shared `client` fixture** most route tests
+  reuse, since that fixture's app instance is already built by the
+  time a test's `monkeypatch.setenv()` runs. Tests that specifically
+  need one of these flags build their own `create_app()` instance
+  after setting the env var, reusing the same builder helper functions
+  as the shared fixture rather than duplicating them.
+- **`FakeModelProvider` never accrues cost** (it's absent from
+  `token_usage.py`'s static pricing table by design — there's no real
+  API bill to estimate) — so the budget-exceeded API test seeds usage
+  directly on the real `CostTracker` singleton
+  (`app.state.cost_tracker.record_usage(...)`) rather than trying to
+  make a real query expensive enough to trip the budget.
+- **SBOM generation shells out to `cyclonedx-py`'s own CLI against the
+  installed environment**, not `requirements.txt` directly — this
+  repo's `requirements.txt` is range-pinned (`fastapi>=0.110`), which
+  would otherwise show up in the SBOM as "no pinned version" for every
+  single package; generating from the actual installed environment
+  gives every component a real exact version.
+- **`deploy/k8s/04-api.yaml` runs `replicas: 1` with
+  `strategy: Recreate`, not a rolling update** — SQLite and the local
+  vector/workflow stores are single-writer; a second pod would briefly
+  try to open the same `ReadWriteOnce` PVCs (and the same SQLite file)
+  as the pod being replaced during a rolling update. Scaling past 1
+  needs a real multi-writer database and shared storage first, out of
+  this milestone's persistence scope — a documented constraint, not an
+  oversight to fix later by just bumping a number.
+- **Docker and `kubectl` are not installed in this sandbox** — every
+  containerization and Kubernetes artifact (Milestone 8's `Dockerfile.
+  api`/`Dockerfile.ui`/`docker-compose.yml`/`deploy/k8s/*.yaml`) could
+  only be verified statically (paths exist, YAML parses, env vars
+  trace correctly through `app.config.settings`) until
+  `.github/workflows/ci.yml`'s `docker-build` job runs a real
+  `docker build` on a GitHub Actions runner. Disclosed explicitly
+  rather than claimed as verified, both in the commit messages and in
+  the root README.
+- **The load-test harness's `run_load_test()` takes an optional ASGI
+  transport parameter** specifically so the exact same code path runs
+  two ways: a real `httpx.AsyncClient` against a real socket (the CLI,
+  and the one real live run performed against a real
+  `python -m app.api` process) or an in-process
+  `httpx.ASGITransport(app=...)` (the test suite) — avoiding a second,
+  parallel "test version" of the harness that could drift from what
+  actually runs in production.
+- **Live end-to-end verification (not just unit tests) was run for
+  7 named operational scenarios** against a real running server in an
+  isolated scratch environment before considering the milestone done:
+  circuit breaker trip + fail-fast, restricted-document filtering,
+  rate-limit 429 + audit event, idempotency-key reuse, a real
+  Prometheus metrics scrape, a live backup/restore round trip with
+  hash-chain verification, and release validation in both a clean and
+  an intentionally-broken simulated environment. All 7 passed with no
+  code changes needed — the value was in proving the *integration*
+  behavior, not just each unit in isolation.
