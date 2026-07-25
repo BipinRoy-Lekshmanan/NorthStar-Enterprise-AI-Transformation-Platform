@@ -166,7 +166,9 @@ def test_triggering_a_run_records_an_audit_event(client, tmp_path):
     executed = client.post("/api/v1/evaluation/runs", json={"category": "rag"}, headers=ENGINEER_HEADERS)
     run_id = executed.json()["run_id"]
 
-    store = AuditStore(tmp_path / "audit_log")
+    # Same DATABASE_URL the running app used (set by tests/conftest.py's
+    # autouse fixture for this same tmp_path).
+    store = AuditStore.from_env()
     events = store.list_events()
     assert len(events) == 1
     assert events[0].action == "evaluation_run_triggered"

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,9 +19,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config.settings import DatabaseSettings
 from app.db.models import Base
 
+_SQLITE_FILE_PREFIX = "sqlite:///"
+
 
 def build_engine(database_url: str | None = None) -> Engine:
     url = database_url or DatabaseSettings.from_env().database_url
+    if url.startswith(_SQLITE_FILE_PREFIX):
+        # SQLite opens the file directly -- it never creates a missing
+        # parent directory itself (unlike every other Milestone
+        # 1-7 store, which mkdir()s its own directory on construction).
+        Path(url[len(_SQLITE_FILE_PREFIX):]).parent.mkdir(parents=True, exist_ok=True)
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     return create_engine(url, connect_args=connect_args)
 

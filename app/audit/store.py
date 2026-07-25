@@ -1,50 +1,158 @@
-"""Append-only audit log persistence (Milestone 7).
+"""SQLite-backed, hash-chained audit log persistence (Milestone 8,
+superseding Milestone 7's append-only JSONL file).
 
-A single growing JSON Lines file under `audit_log/` -- mirrors
-`WorkflowStore`'s "plain files, no external DB" shape. Each event is
-appended as one line; unlike `WorkflowStore` (which rewrites a whole
-execution file per save and so uses a temp-write-then-rename), an
-append-only log just opens in append mode and writes one line at a
-time -- a single `write()` call of one JSON line is already atomic at
-the OS level for typical log-line sizes, and there's no existing file
-content to protect against corrupting.
+Each event is chained to the one before it: `current_hash` is a SHA-256
+digest over `(sequence_number, previous_hash, timestamp, actor, role,
+action, resource_type, resource_id, request_id, outcome, metadata)`, and
+`previous_hash` is the prior event's `current_hash` (`None` for the
+first event). `verify_chain()` walks every event in sequence and
+recomputes the digest -- any edited, deleted-and-reinserted, or
+reordered row breaks the chain at that point, which is the property an
+audit log needs: not just "what happened" but "has this record been
+tampered with since."
+
+Writes are serialized by an in-process lock (not just relying on
+SQLite's own locking) so `sequence_number`/`previous_hash` assignment
+is race-free under concurrent requests -- reading "last row" and
+inserting "next row" must happen as one logical step, the same
+correctness concern `LockRegistry` exists for elsewhere in Milestone 8.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
+import threading
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.audit.models import AuditEvent
+from app.config.settings import DatabaseSettings
+from app.db.engine import build_engine, build_session_factory, create_all, session_scope
+from app.db.models import AuditEventRecord
 
-_LOG_FILENAME = "events.jsonl"
+
+def _as_aware_utc(value: datetime) -> datetime:
+    """Same rationale as `app.resilience.idempotency._as_aware_utc`:
+    SQLite doesn't reliably round-trip timezone-aware datetimes, so a
+    naive value read back is treated as UTC (the only timezone this
+    module ever writes) -- otherwise the hash recomputed at verify time
+    would differ from the one computed at write time through no actual
+    tampering."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def _compute_hash(
+    *, sequence_number: int, previous_hash: str | None, timestamp: datetime, actor: str, role: str | None,
+    action: str, resource_type: str | None, resource_id: str | None, request_id: str | None,
+    outcome: str, metadata: dict,
+) -> str:
+    canonical = json.dumps(
+        {
+            "sequence_number": sequence_number,
+            "previous_hash": previous_hash,
+            "timestamp": _as_aware_utc(timestamp).isoformat(),
+            "actor": actor,
+            "role": role,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "request_id": request_id,
+            "outcome": outcome,
+            "metadata": metadata,
+        },
+        sort_keys=True, default=str,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _to_audit_event(record: AuditEventRecord) -> AuditEvent:
+    return AuditEvent(
+        timestamp=record.timestamp, request_id=record.request_id, actor=record.actor, role=record.role or "",
+        action=record.action, resource_type=record.resource_type, resource_id=record.resource_id,
+        outcome=record.outcome, metadata=record.event_metadata,
+    )
+
+
+@dataclass(frozen=True)
+class ChainVerificationResult:
+    valid: bool
+    total_events: int
+    first_invalid_sequence: int | None = None
+    reason: str | None = None
 
 
 class AuditStore:
-    def __init__(self, directory: Path):
-        self._directory = directory
-        self._directory.mkdir(parents=True, exist_ok=True)
-        self._path = self._directory / _LOG_FILENAME
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self._session_factory = session_factory
+        self._write_lock = threading.Lock()
+
+    @classmethod
+    def from_env(cls, database_url: str | None = None) -> "AuditStore":
+        """Convenience constructor mirroring the other Milestone 8
+        settings classes' `from_env()` -- builds its own engine, creating
+        the schema as a safety net if migrations haven't run yet."""
+        engine = build_engine(database_url or DatabaseSettings.from_env().database_url)
+        create_all(engine)
+        return cls(build_session_factory(engine))
 
     def record(self, event: AuditEvent) -> None:
-        line = json.dumps(event.model_dump(mode="json"))
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        with self._write_lock, session_scope(self._session_factory) as session:
+            last = session.query(AuditEventRecord).order_by(desc(AuditEventRecord.sequence_number)).first()
+            sequence_number = (last.sequence_number if last else 0) + 1
+            previous_hash = last.current_hash if last else None
+            current_hash = _compute_hash(
+                sequence_number=sequence_number, previous_hash=previous_hash, timestamp=event.timestamp,
+                actor=event.actor, role=event.role, action=event.action, resource_type=event.resource_type,
+                resource_id=event.resource_id, request_id=event.request_id, outcome=event.outcome,
+                metadata=event.metadata,
+            )
+            session.add(
+                AuditEventRecord(
+                    event_id=str(uuid.uuid4()), sequence_number=sequence_number, timestamp=event.timestamp,
+                    actor=event.actor, role=event.role, action=event.action, resource_type=event.resource_type,
+                    resource_id=event.resource_id, outcome=event.outcome, request_id=event.request_id,
+                    event_metadata=event.metadata, previous_hash=previous_hash, current_hash=current_hash,
+                )
+            )
 
     def list_events(self, limit: int | None = None) -> list[AuditEvent]:
         """Returns events most-recent-first, optionally capped at `limit`."""
-        if not self._path.exists():
-            return []
+        with session_scope(self._session_factory) as session:
+            query = session.query(AuditEventRecord).order_by(desc(AuditEventRecord.sequence_number))
+            if limit is not None:
+                query = query.limit(limit)
+            return [_to_audit_event(record) for record in query.all()]
 
-        events: list[AuditEvent] = []
-        with self._path.open("r", encoding="utf-8") as handle:
-            for raw_line in handle:
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                events.append(AuditEvent.model_validate(json.loads(raw_line)))
-
-        events.reverse()
-        if limit is not None:
-            events = events[:limit]
-        return events
+    def verify_chain(self) -> ChainVerificationResult:
+        """Walks every event in sequence order and recomputes its hash --
+        `valid=False` on the first record whose stored `current_hash`
+        doesn't match what its content actually hashes to (edited data)
+        or whose `previous_hash` doesn't match the prior record's
+        `current_hash` (reordered or spliced-in data)."""
+        with session_scope(self._session_factory) as session:
+            records = session.query(AuditEventRecord).order_by(AuditEventRecord.sequence_number).all()
+            previous_hash: str | None = None
+            for record in records:
+                if record.previous_hash != previous_hash:
+                    return ChainVerificationResult(
+                        valid=False, total_events=len(records), first_invalid_sequence=record.sequence_number,
+                        reason=f"sequence {record.sequence_number}: previous_hash does not match the prior event.",
+                    )
+                expected = _compute_hash(
+                    sequence_number=record.sequence_number, previous_hash=record.previous_hash,
+                    timestamp=record.timestamp, actor=record.actor, role=record.role, action=record.action,
+                    resource_type=record.resource_type, resource_id=record.resource_id,
+                    request_id=record.request_id, outcome=record.outcome, metadata=record.event_metadata,
+                )
+                if record.current_hash != expected:
+                    return ChainVerificationResult(
+                        valid=False, total_events=len(records), first_invalid_sequence=record.sequence_number,
+                        reason=f"sequence {record.sequence_number}: stored hash does not match its recorded content.",
+                    )
+                previous_hash = record.current_hash
+            return ChainVerificationResult(valid=True, total_events=len(records))

@@ -98,7 +98,7 @@ def test_429_records_an_audit_event(users_file, tmp_path):
         client.get("/api/v1/health", headers={"X-API-Key": "viewer-key"})
         client.get("/api/v1/health", headers={"X-API-Key": "viewer-key"})
 
-    store = AuditStore(tmp_path / "audit_log")
+    store = AuditStore.from_env()
     events = [e for e in store.list_events() if e.action == "rate_limit_exceeded"]
     assert len(events) == 1
     assert events[0].actor == "viewer-key"

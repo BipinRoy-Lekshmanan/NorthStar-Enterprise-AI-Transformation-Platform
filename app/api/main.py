@@ -64,7 +64,9 @@ async def lifespan(app: FastAPI):
     # app.db upgrade` -- a no-op (checkfirst) if Alembic already created
     # the schema, so it never conflicts with real migrations.
     create_all(db_engine)
-    app.state.idempotency_store = IdempotencyStore(build_session_factory(db_engine))
+    db_session_factory = build_session_factory(db_engine)
+    app.state.idempotency_store = IdempotencyStore(db_session_factory)
+    app.state.audit_store = AuditStore(db_session_factory)
 
     telemetry_settings = TelemetrySettings.from_env()
     configure_tracing(
@@ -75,9 +77,6 @@ async def lifespan(app: FastAPI):
 
     auth_settings = AuthSettings.from_env()
     app.state.users = load_users(auth_settings.users_file)
-
-    api_settings = ApiSettings.from_env()
-    app.state.audit_store = AuditStore(api_settings.audit_log_dir)
 
     rag_settings = RagSettings.from_env()
     retrieval_settings = RetrievalSettings.from_env()

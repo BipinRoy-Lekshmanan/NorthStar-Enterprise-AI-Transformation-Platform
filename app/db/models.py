@@ -48,6 +48,7 @@ class AuditEventRecord(Base):
     action: Mapped[str] = mapped_column(String(200), index=True)
     resource_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(20), default="success")
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     organization_id: Mapped[str | None] = mapped_column(String(100), nullable=True)  # multi-tenant prep, unused today
     event_metadata: Mapped[dict] = mapped_column(JSON, default=dict)

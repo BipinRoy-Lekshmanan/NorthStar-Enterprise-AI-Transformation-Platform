@@ -22,6 +22,7 @@ from app.config.environment import Environment, current_environment
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
+    DatabaseSettings,
     EvaluationSettings,
     IngestionSettings,
     RagSettings,
@@ -47,6 +48,7 @@ class SettingsBundle:
     api: ApiSettings
     auth: AuthSettings
     evaluation: EvaluationSettings
+    database: DatabaseSettings
 
 
 def load_all_settings(env: Mapping[str, str] | None = None) -> SettingsBundle:
@@ -64,6 +66,7 @@ def load_all_settings(env: Mapping[str, str] | None = None) -> SettingsBundle:
         api=ApiSettings.from_env(env),
         auth=AuthSettings.from_env(env),
         evaluation=EvaluationSettings.from_env(env),
+        database=DatabaseSettings.from_env(env),
     )
 
 
@@ -85,6 +88,17 @@ def _check_directory_writable(name: str, path: Path) -> str | None:
     except OSError as exc:
         return f"{name} ('{path}') is not writable: {exc}"
     return None
+
+
+def _check_database_writable(database_url: str) -> str | None:
+    """Only meaningful for a `sqlite:///` URL (the only backend this
+    project ships against) -- a non-SQLite URL (e.g. a real Postgres
+    deployment) is assumed to manage its own storage/permissions and is
+    skipped here."""
+    prefix = "sqlite:///"
+    if not database_url.startswith(prefix):
+        return None
+    return _check_directory_writable("DATABASE_URL", Path(database_url[len(prefix):]).parent)
 
 
 def _allowed_models_violation(env: Mapping[str, str] | None, list_var: str, configured_value: str, label: str) -> str | None:
@@ -123,6 +137,10 @@ def validate_production_readiness(bundle: SettingsBundle, env: Mapping[str, str]
         issue = _check_directory_writable(name, path)
         if issue:
             problems.append(issue)
+
+    database_issue = _check_database_writable(bundle.database.database_url)
+    if database_issue:
+        problems.append(database_issue)
 
     try:
         users = load_users(bundle.auth.users_file)

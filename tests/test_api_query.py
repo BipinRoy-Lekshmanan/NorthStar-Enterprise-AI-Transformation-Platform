@@ -224,7 +224,7 @@ def test_successful_query_records_an_audit_event(client, tmp_path):
         headers=AUTH_HEADERS,
     )
 
-    store = AuditStore(tmp_path / "audit_log")
+    store = AuditStore.from_env()
     events = store.list_events()
     assert len(events) == 1
     assert events[0].actor == "v"
