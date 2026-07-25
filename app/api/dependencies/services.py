@@ -24,6 +24,7 @@ from app.config.settings import (
     WorkflowSettings,
 )
 from app.evaluation.run_store import EvaluationRunStore
+from app.operations.background import OperationRunner
 from app.rag.pipeline import RagService
 from app.resilience.concurrency import LockRegistry
 from app.resilience.idempotency import IdempotencyStore
@@ -56,6 +57,10 @@ def get_lock_registry(request: Request) -> LockRegistry:
 
 def get_idempotency_store(request: Request) -> IdempotencyStore:
     return request.app.state.idempotency_store
+
+
+def get_operation_runner(request: Request) -> OperationRunner:
+    return request.app.state.operation_runner
 
 
 def get_audit_store(request: Request) -> AuditStore:

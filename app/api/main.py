@@ -22,7 +22,19 @@ from app.api.middleware.metrics import MetricsMiddleware
 from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
 from app.api.middleware.request_size_limit import RequestSizeLimitMiddleware
-from app.api.routes import advisors, approvals, auth, evaluation, health, knowledge, metrics, platform, query, workflows
+from app.api.routes import (
+    advisors,
+    approvals,
+    auth,
+    evaluation,
+    health,
+    knowledge,
+    metrics,
+    operations,
+    platform,
+    query,
+    workflows,
+)
 from app.api.version import API_PREFIX, APP_VERSION
 from app.audit.store import AuditStore
 from app.auth.users import load_users
@@ -41,6 +53,7 @@ from app.config.settings import (
 )
 from app.db.engine import build_engine, build_session_factory, create_all
 from app.evaluation.run_store import EvaluationRunStore
+from app.operations.background import OperationRunner
 from app.rag.pipeline import build_default_rag_service
 from app.resilience.concurrency import LockRegistry
 from app.resilience.idempotency import IdempotencyStore
@@ -67,6 +80,7 @@ async def lifespan(app: FastAPI):
     db_session_factory = build_session_factory(db_engine)
     app.state.idempotency_store = IdempotencyStore(db_session_factory)
     app.state.audit_store = AuditStore(db_session_factory)
+    app.state.operation_runner = OperationRunner(db_session_factory)
 
     telemetry_settings = TelemetrySettings.from_env()
     configure_tracing(
@@ -146,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix=API_PREFIX)
     app.include_router(approvals.router, prefix=API_PREFIX)
     app.include_router(evaluation.router, prefix=API_PREFIX)
+    app.include_router(operations.router, prefix=API_PREFIX)
     app.include_router(platform.router, prefix=API_PREFIX)
     app.include_router(metrics.router)  # unprefixed -- Prometheus's own scrape convention
 

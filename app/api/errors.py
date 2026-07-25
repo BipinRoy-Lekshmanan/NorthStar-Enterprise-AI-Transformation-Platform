@@ -26,6 +26,7 @@ from app.config.settings import ConfigurationError
 from app.embeddings.vector_store import VectorStoreError
 from app.embeddings.vectorizer import EmbeddingProviderError
 from app.evaluation.run_store import EvaluationRunStoreError
+from app.operations.background import UnknownOperationError
 from app.rag.pipeline import QuestionValidationError
 from app.services.llm_service import ModelProviderError
 from app.workflows.definitions import WorkflowDefinitionError
@@ -88,6 +89,7 @@ _DOMAIN_EXCEPTION_MAP: dict[type[Exception], tuple[int, ErrorCode]] = {
     UnknownAdvisorError: (404, ErrorCode.NOT_FOUND),
     UnknownWorkflowError: (404, ErrorCode.NOT_FOUND),
     UnknownDocumentError: (404, ErrorCode.NOT_FOUND),
+    UnknownOperationError: (404, ErrorCode.NOT_FOUND),
     WorkflowStoreError: (404, ErrorCode.NOT_FOUND),
     EvaluationRunStoreError: (404, ErrorCode.NOT_FOUND),
     WorkflowDefinitionError: (500, ErrorCode.INTERNAL_ERROR),

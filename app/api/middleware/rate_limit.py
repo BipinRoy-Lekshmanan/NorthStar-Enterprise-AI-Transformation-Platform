@@ -41,6 +41,7 @@ _CATEGORY_PREFIXES: tuple[tuple[str, str], ...] = (
     (f"{API_PREFIX}/knowledge/ingest", "administration"),
     (f"{API_PREFIX}/knowledge/index", "administration"),
     (f"{API_PREFIX}/knowledge/rebuild", "administration"),
+    (f"{API_PREFIX}/operations/rebuild", "administration"),
     (f"{API_PREFIX}/platform/audit", "administration"),
 )
 _DEFAULT_CATEGORY = "default"
