@@ -1,0 +1,92 @@
+[project]
+name = "northstar-enterprise-ai-transformation-platform"
+version = "0.8.0"
+description = "Northstar Enterprise AI Transformation Platform -- a portfolio reference implementation of an internal enterprise AI platform (RAG, advisors, workflows, evaluation, API/UI, and production-hardening operations)."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Dependency installation stays on plain pip (requirements.txt /
+# requirements-dev.txt / requirements-lock.txt) -- this file provides
+# project metadata and tool configuration only, not a build backend or
+# a second package manager.
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = [
+    "vector_store",
+    "workflow_store",
+    "audit_log",
+    "evaluation_runs",
+    "data/processed",
+    ".venv",
+    "venv",
+]
+
+[tool.ruff.lint]
+# Deliberately conservative for a 7-milestone-old codebase adopting
+# linting for the first time in Milestone 8: errors/pyflakes/bugbear
+# and import sorting, not a pyupgrade style pass across 7 milestones
+# of working code.
+select = ["E", "F", "I", "B"]
+ignore = [
+    "E501",  # line length is enforced by the formatter/line-length setting, not this rule
+    "B008",  # `Depends(...)`/`Query(...)` as a default arg is FastAPI's own idiom, not a bug
+    "B905",  # zip-without-explicit-strict -- pre-existing, out of Milestone 8's scope
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+# Deliberate sys.path bootstrap before importing app.* modules --
+# Streamlit's own module-resolution across `streamlit run`/pytest is
+# inconsistent, so every page inserts the project root first.
+"app/frontend/main.py" = ["E402"]
+"app/frontend/pages/*.py" = ["E402"]
+# Deferred imports to avoid circular imports (e.g. app.rag.evaluate's
+# `--category workflows` dispatch only imports app.workflows.* when
+# actually selected).
+"app/evaluation/rag_evaluator.py" = ["E402", "I001"]
+"app/workflows/cli.py" = ["E402"]
+# ruff's import-sort autofix would split one clean multi-name import
+# into several single-name lines here -- a readability regression, not
+# an improvement; accepted as-is rather than force cosmetic churn.
+"app/frontend/pages/4_Workflows.py" = ["I001"]
+
+[tool.mypy]
+# 3.12, not the 3.11 floor in [project] -- numpy's own stub files use
+# PEP 695 syntax requiring 3.12+ to parse, and this matches the Docker
+# runtime version this milestone standardizes on.
+python_version = "3.12"
+# Advisory, not blocking, in CI (see .github/workflows/ci.yml) -- 7
+# milestones of code were written without type-checking discipline;
+# failing the whole pipeline on pre-existing modules would be noise,
+# not signal. New Milestone 8 modules (app/resilience, app/telemetry,
+# app/operations, app/db, app/release, app/config) are the ones worth
+# reading mypy output for.
+ignore_missing_imports = true
+check_untyped_defs = false
+disable_error_code = ["import-untyped"]
+exclude = [
+    "tests/",
+    "vector_store/",
+    "workflow_store/",
+    "audit_log/",
+    "evaluation_runs/",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "vector_store", "workflow_store", "audit_log", "evaluation_runs", "data"]
+# B101 (assert used) is expected in test-adjacent helper code and some
+# defensive checks; not a real finding in this codebase's usage.
+skips = ["B101"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/frontend/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

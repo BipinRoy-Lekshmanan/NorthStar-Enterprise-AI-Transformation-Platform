@@ -14,8 +14,7 @@ from app.api.errors import ApiError
 from app.api.main import create_app
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
-from app.auth.users import User
-
+from app.auth.users import User, UserDirectoryError
 
 # -- require_role, tested directly (no app/route needed) -----------------------------
 
@@ -99,6 +98,6 @@ def test_administrator_key_resolves_to_administrator_role(client):
 def test_missing_users_file_fails_app_startup(monkeypatch, tmp_path):
     monkeypatch.setenv("AUTH_USERS_FILE", str(tmp_path / "does_not_exist.json"))
     app = create_app()
-    with pytest.raises(Exception):
+    with pytest.raises(UserDirectoryError, match="not found"):
         with TestClient(app):
             pass

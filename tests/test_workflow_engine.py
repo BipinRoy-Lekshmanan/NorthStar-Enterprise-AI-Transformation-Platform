@@ -13,9 +13,9 @@ inject a controlled definition without changing production code. Real
 workflows get their own end-to-end coverage in `tests/test_workflow_e2e.py`.
 """
 
-import app.workflows.registry as registry_module
 import pytest
 
+import app.workflows.registry as registry_module
 from app.config.settings import IngestionSettings, RagSettings
 from app.embeddings.indexer import Indexer
 from app.embeddings.vector_store import LocalVectorStore
@@ -340,7 +340,6 @@ def test_execution_persists_across_a_fresh_engine_instance(tmp_path, monkeypatch
     execution = engine.run("synthetic", {"topic": "release"})
 
     # Simulate a fresh process: a brand-new engine pointed at the same store dir.
-    kb_dir = tmp_path / "kb"
     provider = LocalHashingEmbeddingProvider(dimensions=128)
     vector_store = LocalVectorStore(tmp_path / "vstore")
     retriever = Retriever(provider, vector_store)

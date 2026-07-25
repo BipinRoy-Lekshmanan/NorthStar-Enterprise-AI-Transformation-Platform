@@ -5,7 +5,7 @@ per-case checks, and aggregate metric computation. Real `WorkflowEngine`
 
 import json
 
-from app.config.settings import PROJECT_ROOT, IngestionSettings, RagSettings
+from app.config.settings import IngestionSettings, RagSettings
 from app.embeddings.indexer import Indexer
 from app.embeddings.vector_store import LocalVectorStore
 from app.embeddings.vectorizer import LocalHashingEmbeddingProvider

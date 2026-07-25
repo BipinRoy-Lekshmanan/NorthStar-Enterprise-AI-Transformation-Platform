@@ -87,10 +87,6 @@ def test_no_retrieval_results_is_insufficient(tmp_path):
     kb_dir = tmp_path / "kb"
     kb_dir.mkdir()
     (kb_dir / "empty.md").write_text("# Empty\n", encoding="utf-8")
-    ingestion_settings = IngestionSettings(
-        knowledge_base_dirs=(kb_dir,), supported_extensions=(".md",),
-        chunk_size=500, chunk_overlap=50, log_level="INFO", output_dir=tmp_path / "processed",
-    )
     provider = LocalHashingEmbeddingProvider(dimensions=64)
     store = LocalVectorStore(tmp_path / "store")
     # No indexing at all -> store is empty -> zero retrieval results

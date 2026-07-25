@@ -10,7 +10,6 @@ from app.auth.roles import Role, role_at_least
 from app.auth.users import UserDirectoryError, load_users
 from app.config.settings import ApiSettings, AuthSettings, ConfigurationError
 
-
 # -- roles -----------------------------------------------------------------------------
 
 

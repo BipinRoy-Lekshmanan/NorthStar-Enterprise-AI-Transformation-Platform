@@ -76,7 +76,9 @@ class ApiClient:
             error = body.get("error", {})
             message = error.get("message", response.text)
             code = error.get("code")
-        except Exception:
+        except (ValueError, AttributeError):
+            # Not JSON, or JSON that isn't the expected {"error": {...}} shape --
+            # fall back to the raw response text already assigned above.
             pass
         raise ApiClientError(message, status_code=response.status_code, code=code)
 

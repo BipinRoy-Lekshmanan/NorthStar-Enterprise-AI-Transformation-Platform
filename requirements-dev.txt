@@ -1,2 +1,10 @@
 -r requirements.txt
 pytest>=8.0
+
+# Milestone 8: code quality, security scanning, release tooling
+ruff>=0.6
+mypy>=1.11
+bandit>=1.7
+pip-audit>=2.7
+coverage>=7.6
+cyclonedx-bom>=4.5

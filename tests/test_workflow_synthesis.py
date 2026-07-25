@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 
 from app.config.prompt_config import WorkflowSynthesisInput, build_workflow_synthesis_prompt
 from app.models.citation import Citation
-from app.models.workflow import EvidenceGap, ReviewFinding, WorkflowStageResult
-from app.services.llm_service import FakeModelProvider, ModelProviderError, ModelUnavailableError
+from app.models.workflow import WorkflowStageResult
+from app.services.llm_service import FakeModelProvider, ModelUnavailableError
 from app.workflows.synthesis import dedupe_citations, run_synthesis_stage
 
 _NOW = datetime.now(timezone.utc)
