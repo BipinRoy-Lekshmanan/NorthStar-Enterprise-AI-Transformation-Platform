@@ -138,6 +138,34 @@ def test_viewer_cannot_start_a_rebuild_operation(client):
     assert response.status_code == 403
 
 
+def test_rebuild_returns_404_when_the_feature_flag_disables_it(users_file, tmp_path, monkeypatch):
+    """FEATURE_FLAGS is read once at lifespan startup, so it must be set
+    before create_app()/TestClient(...) run -- can't reuse the shared
+    `client` fixture here, since that app is already built by the time
+    a test function's own `monkeypatch` would take effect."""
+    monkeypatch.setenv("FEATURE_FLAGS", "background_operations=false")
+
+    kb_dir = _seed_kb(tmp_path / "kb")
+    ingestion_settings = _ingestion_settings(tmp_path, kb_dir)
+    retrieval_settings = _retrieval_settings(tmp_path)
+    service = _build_indexed_service(tmp_path, kb_dir, ingestion_settings, retrieval_settings)
+
+    app = create_app()
+    app.dependency_overrides[get_rag_service] = lambda: service
+    app.dependency_overrides[get_rag_settings] = lambda: _rag_settings()
+    app.dependency_overrides[get_router_settings] = lambda: _router_settings()
+    app.dependency_overrides[get_ingestion_settings] = lambda: ingestion_settings
+    app.dependency_overrides[get_retrieval_settings] = lambda: retrieval_settings
+
+    with TestClient(app) as disabled_client:
+        response = disabled_client.post(
+            "/api/v1/operations/rebuild", json={"confirmation": "REBUILD"}, headers=ADMIN_HEADERS,
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
 def test_rebuild_requires_exact_confirmation_phrase(client):
     response = client.post("/api/v1/operations/rebuild", json={"confirmation": "yes please"}, headers=ADMIN_HEADERS)
     assert response.status_code == 400

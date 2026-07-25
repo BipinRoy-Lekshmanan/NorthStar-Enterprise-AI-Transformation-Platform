@@ -6,11 +6,18 @@ chunking, embedding, or retrieval logic is reimplemented here.
 
 The document catalog (list/detail) is built by re-running the ingestion
 pipeline's discover -> load -> extract-metadata -> chunk steps with
-`persist=False` (no disk writes) on every call. The knowledge base is
-small enough (tens of files) that this is fast, and it sidesteps a
-stale-cache invalidation problem entirely: the catalog always reflects
-whatever `run_ingestion`/`run_incremental_index`/`run_full_rebuild` most
-recently did, with no cache to remember to bust.
+`persist=False` (no disk writes). The knowledge base is small enough
+(tens of files) that a single run is fast, but this is now called on
+every list/detail/search/classification-check request (Milestone 8's
+restricted-document filtering added several more call sites per
+request) -- `build_catalog()` is cached for `_CATALOG_CACHE_TTL_SECONDS`
+per distinct `IngestionSettings` (Milestone 8's `app.cache.TTLCache`,
+keyed on the settings themselves since they're a hashable frozen
+dataclass). Caching alone would silently reintroduce a staleness bug,
+so `run_ingestion`/`run_incremental_index`/`run_full_rebuild` all
+explicitly invalidate the cache after they mutate the knowledge base --
+the catalog still always reflects the most recent mutation, it just
+doesn't re-run the full pipeline for every read in between.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.auth.roles import Role, role_at_least
+from app.cache.ttl_cache import TTLCache
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.embeddings.indexer import Indexer, IndexSyncReport, build_provider_and_store
 from app.ingestion.pipeline import IngestionPipeline, IngestionResult
@@ -32,6 +40,9 @@ from app.telemetry.metrics import (
     knowledge_indexing_duration_seconds,
     knowledge_ingestion_failures_total,
 )
+
+_CATALOG_CACHE_TTL_SECONDS = 30.0
+_catalog_cache: TTLCache[list["DocumentSummary"]] = TTLCache(ttl_seconds=_CATALOG_CACHE_TTL_SECONDS)
 
 # Milestone 8: data-classification guardrail. Neither `Chunk` nor
 # `Citation` carry a classification of their own (Milestone 1's chunk
@@ -81,6 +92,10 @@ def _domain_from_path(source_path: str) -> str:
 
 def build_catalog(ingestion_settings: IngestionSettings | None = None) -> list[DocumentSummary]:
     settings = ingestion_settings or IngestionSettings.from_env()
+    return _catalog_cache.get_or_compute(settings, lambda: _build_catalog_uncached(settings))
+
+
+def _build_catalog_uncached(settings: IngestionSettings) -> list[DocumentSummary]:
     pipeline = IngestionPipeline(settings=settings)
     result: IngestionResult = pipeline.run(persist=False)
 
@@ -188,6 +203,7 @@ def run_ingestion(ingestion_settings: IngestionSettings | None = None) -> dict:
     knowledge_documents_discovered.set(summary["files_discovered"])
     if summary["documents_failed"]:
         knowledge_ingestion_failures_total.inc(summary["documents_failed"])
+    _catalog_cache.invalidate()
     return summary
 
 
@@ -201,6 +217,7 @@ def run_incremental_index(
     with knowledge_indexing_duration_seconds.labels(operation="index").time():
         report = indexer.index_from_pipeline(pipeline)
     knowledge_chunks_indexed.set(report.total)
+    _catalog_cache.invalidate()
     return report
 
 
@@ -233,6 +250,7 @@ def run_full_rebuild(
         with knowledge_indexing_duration_seconds.labels(operation="rebuild").time():
             report = indexer.index_from_pipeline(pipeline)
         knowledge_chunks_indexed.set(report.total)
+        _catalog_cache.invalidate()
         return report
 
     if lock_registry is None:

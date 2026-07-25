@@ -16,6 +16,7 @@ from datetime import datetime
 from fastapi import Request
 
 from app.audit.store import AuditStore
+from app.config.feature_flags import FeatureFlagSettings
 from app.config.settings import (
     IngestionSettings,
     RagSettings,
@@ -61,6 +62,10 @@ def get_idempotency_store(request: Request) -> IdempotencyStore:
 
 def get_operation_runner(request: Request) -> OperationRunner:
     return request.app.state.operation_runner
+
+
+def get_feature_flags(request: Request) -> FeatureFlagSettings:
+    return request.app.state.feature_flags
 
 
 def get_audit_store(request: Request) -> AuditStore:

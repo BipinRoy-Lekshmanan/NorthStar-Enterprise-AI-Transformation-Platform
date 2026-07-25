@@ -2,6 +2,7 @@
 
     python -m app.config validate
     python -m app.config show --redacted
+    python -m app.config limits
 
 Pure formatting/exit-code logic only -- `production_checks.py` and each
 settings class's own `.validate()` hold every actual rule.
@@ -16,6 +17,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.limits import CapacityLimits
 from app.config.production_checks import SettingsBundle, load_all_settings, validate_production_readiness
 from app.config.redaction import redact
 from app.config.settings import ConfigurationError
@@ -81,6 +83,18 @@ def _run_show() -> int:
     return 0
 
 
+def _run_limits() -> int:
+    try:
+        bundle = load_all_settings()
+    except ConfigurationError as exc:
+        print(f"Configuration error -- {exc}")
+        return 1
+
+    limits = CapacityLimits.from_settings_bundle(bundle)
+    print(json.dumps(_json_safe(limits), indent=2))
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Northstar platform configuration diagnostics.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -93,12 +107,16 @@ def main() -> None:
         help="Redact secret-shaped fields (always on -- this command never prints raw secrets).",
     )
 
+    subparsers.add_parser("limits", help="Print the consolidated capacity-limit view.")
+
     args = parser.parse_args()
 
     if args.command == "validate":
         raise SystemExit(_run_validate())
     if args.command == "show":
         raise SystemExit(_run_show())
+    if args.command == "limits":
+        raise SystemExit(_run_limits())
 
 
 if __name__ == "__main__":

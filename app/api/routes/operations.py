@@ -3,7 +3,11 @@
 Viewing an operation's status is viewer-level (visibility, same tier as
 knowledge listing); starting one is administrator-level, matching the
 synchronous `POST /knowledge/rebuild` it wraps -- same confirmation
-phrase requirement, same audit action name family.
+phrase requirement, same audit action name family. Gated behind the
+`background_operations` feature flag (default enabled) as a concrete
+demonstration of `FeatureFlagSettings` -- a deployment can set
+`FEATURE_FLAGS=background_operations=false` to fall back to the
+synchronous-only `/knowledge/rebuild` path without a code change.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.dependencies.services import (
     get_audit_store,
+    get_feature_flags,
     get_ingestion_settings,
     get_lock_registry,
     get_operation_runner,
@@ -27,11 +32,14 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.config.feature_flags import FeatureFlagSettings
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.operations.background import OperationRunner
 from app.resilience.concurrency import LockRegistry
 
 router = APIRouter()
+
+_BACKGROUND_OPERATIONS_FLAG = "background_operations"
 
 
 @router.get(
@@ -78,8 +86,14 @@ def start_rebuild_operation_route(
     audit_store: AuditStore = Depends(get_audit_store),
     lock_registry: LockRegistry = Depends(get_lock_registry),
     runner: OperationRunner = Depends(get_operation_runner),
+    feature_flags: FeatureFlagSettings = Depends(get_feature_flags),
     user: User = Depends(require_role(Role.ADMINISTRATOR)),
 ) -> OperationOut:
+    if not feature_flags.is_enabled(_BACKGROUND_OPERATIONS_FLAG, default=True):
+        raise ApiError(
+            404, ErrorCode.NOT_FOUND,
+            "Background operations are disabled on this deployment. Use POST /knowledge/rebuild instead.",
+        )
     if body.confirmation != "REBUILD":
         raise ApiError(400, ErrorCode.VALIDATION_ERROR, "Type REBUILD (exact case) to confirm a full rebuild.")
 

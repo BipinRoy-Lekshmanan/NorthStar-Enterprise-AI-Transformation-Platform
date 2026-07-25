@@ -1,12 +1,13 @@
 """Tests for `app.config.cli` (Milestone 8) -- `python -m app.config
-validate|show`. Tests call `_run_validate()`/`_run_show()` directly
-(these read `os.environ` via `load_all_settings(env=None)`), with
-`monkeypatch.setenv` isolating each test to a tmp_path environment.
+validate|show|limits`. Tests call `_run_validate()`/`_run_show()`/
+`_run_limits()` directly (these read `os.environ` via
+`load_all_settings(env=None)`), with `monkeypatch.setenv` isolating
+each test to a tmp_path environment.
 """
 
 import json
 
-from app.config.cli import _run_show, _run_validate
+from app.config.cli import _run_limits, _run_show, _run_validate
 
 
 def _set_clean_env(monkeypatch, tmp_path, **overrides):
@@ -95,4 +96,32 @@ def test_show_prints_valid_json_with_secrets_redacted(monkeypatch, tmp_path, cap
 def test_show_returns_nonzero_on_configuration_error(monkeypatch, tmp_path, capsys):
     _set_clean_env(monkeypatch, tmp_path, API_PORT="99999")
     exit_code = _run_show()
+    assert exit_code == 1
+
+
+def test_limits_prints_valid_json_with_expected_keys(monkeypatch, tmp_path, capsys):
+    _set_clean_env(monkeypatch, tmp_path)
+    exit_code = _run_limits()
+    assert exit_code == 0
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["max_question_length"] == 2000
+    assert body["rate_limit_category_overrides"] == {
+        "query": 60, "advisor": 60, "workflow": 30, "evaluation": 10, "administration": 10,
+    }
+    assert body["workflow_max_stages"] == 20
+
+
+def test_limits_reflects_a_non_default_override(monkeypatch, tmp_path, capsys):
+    _set_clean_env(monkeypatch, tmp_path, LLM_MAX_OUTPUT_TOKENS="512")
+    exit_code = _run_limits()
+    assert exit_code == 0
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["llm_max_output_tokens"] == 512
+
+
+def test_limits_returns_nonzero_on_configuration_error(monkeypatch, tmp_path, capsys):
+    _set_clean_env(monkeypatch, tmp_path, API_PORT="99999")
+    exit_code = _run_limits()
     assert exit_code == 1

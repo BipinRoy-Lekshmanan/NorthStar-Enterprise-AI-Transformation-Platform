@@ -546,7 +546,7 @@ class ApiSettings:
                     env, "RATE_LIMIT_ADMINISTRATION_PER_MINUTE", DEFAULT_RATE_LIMIT_ADMINISTRATION_PER_MINUTE
                 ),
             },
-            debug=_parse_bool(env, "DEBUG", DEFAULT_DEBUG),
+            debug=parse_bool(env, "DEBUG", DEFAULT_DEBUG),
         )
         settings.validate()
         return settings
@@ -655,7 +655,7 @@ class TelemetrySettings:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "TelemetrySettings":
         env = env if env is not None else os.environ
         settings = cls(
-            tracing_enabled=_parse_bool(env, "TRACING_ENABLED", DEFAULT_TRACING_ENABLED),
+            tracing_enabled=parse_bool(env, "TRACING_ENABLED", DEFAULT_TRACING_ENABLED),
             otlp_endpoint=env.get("OTLP_ENDPOINT") or None,
         )
         settings.validate()
@@ -712,7 +712,7 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
-def _parse_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
+def parse_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
     raw = env.get(key)
     if raw is None or raw.strip() == "":
         return default
