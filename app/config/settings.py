@@ -62,6 +62,7 @@ DEFAULT_API_MAX_QUESTION_LENGTH = 2000
 DEFAULT_API_MAX_UPLOAD_BYTES = 200_000
 DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 60.0
 DEFAULT_API_RATE_LIMIT_PER_MINUTE = 120
+DEFAULT_DEBUG = False
 
 DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
 
@@ -471,6 +472,7 @@ class ApiSettings:
     request_timeout_seconds: float
     audit_log_dir: Path
     rate_limit_per_minute: int
+    debug: bool
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ApiSettings":
@@ -492,6 +494,7 @@ class ApiSettings:
             rate_limit_per_minute=_parse_int(
                 env, "API_RATE_LIMIT_PER_MINUTE", DEFAULT_API_RATE_LIMIT_PER_MINUTE
             ),
+            debug=_parse_bool(env, "DEBUG", DEFAULT_DEBUG),
         )
         settings.validate()
         return settings
@@ -595,3 +598,19 @@ def _parse_float(env: Mapping[str, str], key: str, default: float) -> float:
         return float(raw)
     except ValueError as exc:
         raise ConfigurationError(f"{key} must be a number, got '{raw}'.") from exc
+
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def _parse_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
+    raw = env.get(key)
+    if raw is None or raw.strip() == "":
+        return default
+    lowered = raw.strip().lower()
+    if lowered in _TRUE_VALUES:
+        return True
+    if lowered in _FALSE_VALUES:
+        return False
+    raise ConfigurationError(f"{key} must be a boolean (true/false/1/0/yes/no/on/off), got '{raw}'.")
