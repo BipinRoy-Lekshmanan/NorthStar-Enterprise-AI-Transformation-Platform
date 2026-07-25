@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.auth.roles import Role, role_at_least
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.embeddings.indexer import Indexer, IndexSyncReport, build_provider_and_store
 from app.ingestion.pipeline import IngestionPipeline, IngestionResult
@@ -31,6 +32,14 @@ from app.telemetry.metrics import (
     knowledge_indexing_duration_seconds,
     knowledge_ingestion_failures_total,
 )
+
+# Milestone 8: data-classification guardrail. Neither `Chunk` nor
+# `Citation` carry a classification of their own (Milestone 1's chunk
+# model is intentionally unchanged by this milestone), so Restricted
+# content is filtered by cross-referencing `document_id` against the
+# catalog instead.
+_RESTRICTED_CLASSIFICATION = "restricted"
+RESTRICTED_MINIMUM_ROLE = Role.ADMINISTRATOR
 
 
 class UnknownDocumentError(KeyError):
@@ -128,6 +137,40 @@ def get_document(document_id: str, ingestion_settings: IngestionSettings | None 
     raise UnknownDocumentError(f"Unknown document_id '{document_id}'.")
 
 
+def is_restricted(classification: str | None) -> bool:
+    return (classification or "").strip().lower() == _RESTRICTED_CLASSIFICATION
+
+
+def exclude_restricted_documents(documents: list[DocumentSummary]) -> list[DocumentSummary]:
+    return [document for document in documents if not is_restricted(document.classification)]
+
+
+def restricted_document_ids(ingestion_settings: IngestionSettings | None = None) -> set[str]:
+    """document_id set for every catalog document classified Restricted --
+    the cross-reference `search_knowledge`/citation filtering use, since
+    neither `Chunk` nor `Citation` carry a classification of their own."""
+    return {
+        document.document_id for document in build_catalog(ingestion_settings)
+        if document.document_id is not None and is_restricted(document.classification)
+    }
+
+
+def restricted_ids_for_role(role: Role, ingestion_settings: IngestionSettings | None = None) -> set[str]:
+    """Returns the empty set for a role privileged enough to see
+    Restricted content, so callers can unconditionally pass the result
+    into `filter_restricted_citations`/`search_knowledge`'s
+    `exclude_document_ids` without an `if` at every call site."""
+    if role_at_least(role, RESTRICTED_MINIMUM_ROLE):
+        return set()
+    return restricted_document_ids(ingestion_settings)
+
+
+def filter_restricted_citations(citations: list, restricted_ids: set[str]) -> list:
+    if not restricted_ids:
+        return citations
+    return [citation for citation in citations if citation.document_id not in restricted_ids]
+
+
 def knowledge_stats(ingestion_settings: IngestionSettings | None = None) -> dict:
     catalog = build_catalog(ingestion_settings)
     return {
@@ -209,10 +252,19 @@ def run_full_rebuild(
 
 
 def search_knowledge(
-    retriever: Retriever, question: str, top_k: int = 10, filters: dict[str, str] | None = None
+    retriever: Retriever, question: str, top_k: int = 10, filters: dict[str, str] | None = None,
+    exclude_document_ids: set[str] | None = None,
 ) -> RetrievalResponse:
     """Semantic search only -- no answer generation, no citations, no
     advisor/prompt involvement. Reuses the exact Milestone 2 `Retriever`
-    behind `RagService.retriever`."""
+    behind `RagService.retriever`.
+
+    `exclude_document_ids` (typically `restricted_ids_for_role(...)`) is
+    applied *after* retrieval -- results are still ranked over the full
+    index, then Restricted matches are dropped from what's returned."""
     query = RetrievalQuery(text=question, top_k=top_k, filters=filters or {})
-    return retriever.retrieve(query)
+    response = retriever.retrieve(query)
+    if exclude_document_ids:
+        kept = [result for result in response.results if result.chunk.document_id not in exclude_document_ids]
+        response = RetrievalResponse(results=kept, diagnostics=response.diagnostics)
+    return response

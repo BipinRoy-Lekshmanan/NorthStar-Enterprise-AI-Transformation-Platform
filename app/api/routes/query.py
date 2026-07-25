@@ -13,15 +13,22 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
-from app.api.dependencies.services import get_audit_store, get_rag_service, get_rag_settings, get_router_settings
+from app.api.dependencies.services import (
+    get_audit_store,
+    get_ingestion_settings,
+    get_rag_service,
+    get_rag_settings,
+    get_router_settings,
+)
 from app.api.schemas.query import QueryRequest, QueryResponse, build_query_response
+from app.api.services.knowledge_service import filter_restricted_citations, restricted_ids_for_role
 from app.api.services.query_service import QueryFilters, ask_auto, ask_manual
 from app.audit.logger import AuditContext
 from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
-from app.config.settings import RagSettings, RouterSettings
+from app.config.settings import IngestionSettings, RagSettings, RouterSettings
 from app.export.common import build_query_export_envelope
 from app.export.markdown_renderer import render_query_answer_markdown
 from app.rag.pipeline import RagService
@@ -39,6 +46,7 @@ def ask_question(
     service: RagService = Depends(get_rag_service),
     rag_settings: RagSettings = Depends(get_rag_settings),
     router_settings: RouterSettings = Depends(get_router_settings),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     user: User = Depends(require_role(Role.VIEWER)),
 ) -> QueryResponse:
@@ -66,6 +74,8 @@ def ask_question(
         )
 
     response = build_query_response(result, request_id)
+    restricted_ids = restricted_ids_for_role(user.role, ingestion_settings)
+    response.citations = filter_restricted_citations(response.citations, restricted_ids)
     if format == "markdown":
         markdown_text = render_query_answer_markdown(build_query_export_envelope(response.model_dump(mode="json")))
         return PlainTextResponse(markdown_text, media_type="text/markdown")

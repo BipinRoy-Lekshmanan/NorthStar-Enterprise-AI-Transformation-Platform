@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.dependencies.services import get_audit_store, get_rag_service, get_router_settings
+from app.api.dependencies.services import get_audit_store, get_ingestion_settings, get_rag_service, get_router_settings
 from app.api.schemas.advisors import (
     AdvisorOut,
     AdvisorQueryRequest,
@@ -19,13 +19,14 @@ from app.api.schemas.advisors import (
 )
 from app.api.schemas.query import QueryResponse, build_query_response
 from app.api.services.advisor_service import get_advisor_detail, list_all_advisors, preview_routing
+from app.api.services.knowledge_service import filter_restricted_citations, restricted_ids_for_role
 from app.api.services.query_service import QueryFilters, ask_manual
 from app.audit.logger import AuditContext
 from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
-from app.config.settings import RouterSettings
+from app.config.settings import IngestionSettings, RouterSettings
 from app.rag.pipeline import RagService
 
 router = APIRouter()
@@ -52,6 +53,7 @@ def query_advisor_route(
     request: Request,
     body: AdvisorQueryRequest,
     service: RagService = Depends(get_rag_service),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> QueryResponse:
@@ -63,7 +65,10 @@ def query_advisor_route(
         service, body.question, advisor_id, filters,
         include_diagnostics=body.include_diagnostics, include_context=body.include_retrieved_context, audit=audit,
     )
-    return build_query_response(result, request_id)
+    response = build_query_response(result, request_id)
+    restricted_ids = restricted_ids_for_role(user.role, ingestion_settings)
+    response.citations = filter_restricted_citations(response.citations, restricted_ids)
+    return response
 
 
 @router.post(

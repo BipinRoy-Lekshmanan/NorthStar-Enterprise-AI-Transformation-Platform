@@ -90,11 +90,16 @@ def users_file(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(users_file, tmp_path):
+def client(users_file, tmp_path, monkeypatch):
     app = create_app()
     kb_root = tmp_path / "kb_root"
     kb_root.mkdir()
     service = _build_service(kb_root)
+    # Restricted-document filtering (Milestone 8) resolves IngestionSettings
+    # via app.state -- without this override every request would silently
+    # re-run ingestion against the real enterprise_knowledge_base/ instead
+    # of this test's own tmp_path fixture KB.
+    monkeypatch.setenv("KNOWLEDGE_BASE_DIRS", str(kb_root / "kb"))
 
     app.dependency_overrides[get_rag_service] = lambda: service
     app.dependency_overrides[get_rag_settings] = lambda: _rag_settings()

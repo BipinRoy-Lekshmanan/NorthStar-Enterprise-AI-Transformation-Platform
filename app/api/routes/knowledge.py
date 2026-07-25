@@ -33,11 +33,16 @@ from app.api.schemas.knowledge import (
 )
 from app.api.services.idempotency_service import check_idempotency, save_idempotent_response
 from app.api.services.knowledge_service import (
+    RESTRICTED_MINIMUM_ROLE,
     DocumentFilter,
+    UnknownDocumentError,
     build_catalog,
+    exclude_restricted_documents,
     filter_documents,
     get_document,
+    is_restricted,
     knowledge_stats,
+    restricted_ids_for_role,
     run_full_rebuild,
     run_incremental_index,
     run_ingestion,
@@ -46,7 +51,7 @@ from app.api.services.knowledge_service import (
 from app.audit.logger import AuditContext, record_from_context
 from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
-from app.auth.roles import Role
+from app.auth.roles import Role, role_at_least
 from app.auth.users import User
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.rag.pipeline import RagService
@@ -70,13 +75,15 @@ def list_documents_route(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1),
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
-    _user: User = Depends(require_role(Role.VIEWER)),
+    user: User = Depends(require_role(Role.VIEWER)),
 ) -> PaginatedResponse[DocumentOut]:
     page, page_size = validate_pagination(page, page_size)
     filters = DocumentFilter(
         title=title, document_id=document_id, source_path=source_path, status=status, owner=owner, domain=domain,
     )
     documents = filter_documents(build_catalog(ingestion_settings), filters)
+    if not role_at_least(user.role, RESTRICTED_MINIMUM_ROLE):
+        documents = exclude_restricted_documents(documents)
     page_items, total_items, total_pages = paginate_slice(documents, page, page_size)
     return PaginatedResponse[DocumentOut](
         items=[build_document_out(d) for d in page_items],
@@ -91,9 +98,14 @@ def list_documents_route(
 def get_document_route(
     document_id: str,
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
-    _user: User = Depends(require_role(Role.VIEWER)),
+    user: User = Depends(require_role(Role.VIEWER)),
 ) -> DocumentOut:
-    return build_document_out(get_document(document_id, ingestion_settings))
+    document = get_document(document_id, ingestion_settings)
+    if is_restricted(document.classification) and not role_at_least(user.role, RESTRICTED_MINIMUM_ROLE):
+        # Indistinguishable from "doesn't exist" -- same reasoning as a
+        # disabled user's API key looking like an invalid one.
+        raise UnknownDocumentError(f"Unknown document_id '{document_id}'.")
+    return build_document_out(document)
 
 
 @router.get(
@@ -113,7 +125,8 @@ def knowledge_stats_route(
 def search_route(
     body: SearchRequest,
     service: RagService = Depends(get_rag_service),
-    _user: User = Depends(require_role(Role.VIEWER)),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
+    user: User = Depends(require_role(Role.VIEWER)),
 ) -> SearchResponse:
     filters: dict[str, str] = {}
     if body.document_id:
@@ -121,7 +134,10 @@ def search_route(
     if body.source_file:
         filters["source_file"] = body.source_file
 
-    response = search_knowledge(service.retriever, body.question, top_k=body.top_k, filters=filters)
+    exclude_ids = restricted_ids_for_role(user.role, ingestion_settings)
+    response = search_knowledge(
+        service.retriever, body.question, top_k=body.top_k, filters=filters, exclude_document_ids=exclude_ids,
+    )
     return SearchResponse(
         results=[build_search_result_out(result, body.include_full_text) for result in response.results],
         total_indexed_chunks=response.diagnostics.total_indexed_chunks,

@@ -98,6 +98,11 @@ def users_file(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("AUTH_USERS_FILE", str(path))
     monkeypatch.setenv("AUDIT_LOG_DIR", str(tmp_path / "audit_log"))
+    # Restricted-document filtering (Milestone 8) resolves IngestionSettings
+    # via app.state -- without this override every request would silently
+    # re-run ingestion against the real enterprise_knowledge_base/ instead
+    # of this test's own tmp_path fixture KB.
+    monkeypatch.setenv("KNOWLEDGE_BASE_DIRS", str(tmp_path / "kb"))
     return path
 
 

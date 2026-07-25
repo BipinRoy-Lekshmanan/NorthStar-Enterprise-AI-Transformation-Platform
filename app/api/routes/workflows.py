@@ -12,7 +12,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from app.api.dependencies.services import get_audit_store, get_idempotency_store, get_lock_registry, get_workflow_engine
+from app.api.dependencies.services import (
+    get_audit_store,
+    get_idempotency_store,
+    get_ingestion_settings,
+    get_lock_registry,
+    get_workflow_engine,
+)
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas.common import DEFAULT_PAGE_SIZE, PaginatedResponse, paginate_slice, validate_pagination
 from app.api.schemas.workflows import (
@@ -30,6 +36,7 @@ from app.api.schemas.workflows import (
     build_workflow_summary_out,
 )
 from app.api.services.idempotency_service import check_idempotency, save_idempotent_response
+from app.api.services.knowledge_service import filter_restricted_citations, restricted_ids_for_role
 from app.api.services.workflow_service import (
     cancel_execution,
     collect_conflicts,
@@ -49,6 +56,7 @@ from app.audit.store import AuditStore
 from app.auth.dependencies import require_role
 from app.auth.roles import Role
 from app.auth.users import User
+from app.config.settings import IngestionSettings
 from app.export.common import build_workflow_report_export_envelope
 from app.export.markdown_renderer import render_workflow_report_markdown
 from app.resilience.concurrency import LockRegistry
@@ -59,14 +67,17 @@ from app.workflows.synthesis import dedupe_citations
 router = APIRouter()
 
 
-def _detail_out(execution) -> ExecutionDetailOut:
-    return build_execution_detail_out(
+def _detail_out(execution, restricted_ids: set[str] | None = None) -> ExecutionDetailOut:
+    detail = build_execution_detail_out(
         execution,
         findings=collect_findings(execution),
         evidence_gaps=collect_evidence_gaps(execution),
         conflicts=collect_conflicts(execution),
         citations=dedupe_citations(execution.stage_results),
     )
+    if restricted_ids:
+        detail.citations = filter_restricted_citations(detail.citations, restricted_ids)
+    return detail
 
 
 @router.get("/workflows", summary="List available workflows", tags=["Workflows"], response_model=list[WorkflowSummaryOut])
@@ -126,6 +137,7 @@ def execute_workflow_route(
     body: ExecuteWorkflowRequest,
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
     user: User = Depends(require_role(Role.ENGINEER)),
@@ -139,7 +151,7 @@ def execute_workflow_route(
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     execution = execute_workflow(engine, workflow_id, body.inputs, audit=audit)
-    result = _detail_out(execution)
+    result = _detail_out(execution, restricted_ids_for_role(user.role, ingestion_settings))
     save_idempotent_response(
         request, idempotency_store, idempotency_endpoint, request_body, 200, result.model_dump(mode="json"),
     )
@@ -152,9 +164,10 @@ def execute_workflow_route(
 )
 def get_execution_route(
     execution_id: str, engine: WorkflowEngine = Depends(get_workflow_engine),
-    _user: User = Depends(require_role(Role.VIEWER)),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
+    user: User = Depends(require_role(Role.VIEWER)),
 ) -> ExecutionDetailOut:
-    return _detail_out(get_execution(engine, execution_id))
+    return _detail_out(get_execution(engine, execution_id), restricted_ids_for_role(user.role, ingestion_settings))
 
 
 @router.post(
@@ -165,6 +178,7 @@ def resume_execution_route(
     execution_id: str,
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     lock_registry: LockRegistry = Depends(get_lock_registry),
     idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
@@ -178,7 +192,7 @@ def resume_execution_route(
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     execution = resume_execution(engine, execution_id, audit=audit, lock_registry=lock_registry)
-    result = _detail_out(execution)
+    result = _detail_out(execution, restricted_ids_for_role(user.role, ingestion_settings))
     save_idempotent_response(request, idempotency_store, idempotency_endpoint, {}, 200, result.model_dump(mode="json"))
     return result
 
@@ -191,6 +205,7 @@ def cancel_execution_route(
     execution_id: str,
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
     lock_registry: LockRegistry = Depends(get_lock_registry),
     user: User = Depends(require_role(Role.ENGINEER)),
@@ -198,7 +213,7 @@ def cancel_execution_route(
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     execution = cancel_execution(engine, execution_id, audit=audit, lock_registry=lock_registry)
-    return _detail_out(execution)
+    return _detail_out(execution, restricted_ids_for_role(user.role, ingestion_settings))
 
 
 @router.get(
@@ -209,7 +224,8 @@ def get_report_route(
     execution_id: str,
     format: str = Query(default="json", pattern="^(json|markdown)$", description="'json' (default) or 'markdown'"),
     engine: WorkflowEngine = Depends(get_workflow_engine),
-    _user: User = Depends(require_role(Role.VIEWER)),
+    ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
+    user: User = Depends(require_role(Role.VIEWER)),
 ) -> WorkflowReportOut:
     execution = get_execution(engine, execution_id)
     sections = get_report(execution)
@@ -223,8 +239,7 @@ def get_report_route(
         sections=sections,
     )
     if format == "markdown":
-        envelope = build_workflow_report_export_envelope(
-            report.model_dump(mode="json"), _detail_out(execution).model_dump(mode="json"),
-        )
+        detail = _detail_out(execution, restricted_ids_for_role(user.role, ingestion_settings))
+        envelope = build_workflow_report_export_envelope(report.model_dump(mode="json"), detail.model_dump(mode="json"))
         return PlainTextResponse(render_workflow_report_markdown(envelope), media_type="text/markdown")
     return report
