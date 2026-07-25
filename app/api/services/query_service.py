@@ -20,9 +20,11 @@ from app.agents.router import AdvisorRouter
 from app.audit.logger import AuditContext, record_from_context
 from app.config.settings import RagSettings, RouterSettings
 from app.models.citation import Citation
+from app.models.query import RetrievalQuery
 from app.models.response import RagAnswer
 from app.models.workflow import WorkflowStageResult
 from app.rag.pipeline import RagService
+from app.services.llm_service import ModelProviderError
 from app.telemetry.metrics import (
     advisor_duration_seconds,
     advisor_executions_total,
@@ -74,6 +76,7 @@ class QueryResult:
     conflicts: list[str] = field(default_factory=list)
     diagnostics: dict | None = None
     retrieved_context: list[RetrievedChunk] | None = None
+    degraded: bool = False
 
 
 def _diagnostics_dict(answer: RagAnswer) -> dict:
@@ -92,6 +95,42 @@ def _record_rag_metrics(answer: RagAnswer, *, mode: str, advisor_id: str) -> Non
         rag_model_duration_seconds.labels(provider=diagnostics.model_provider or "unknown").observe(
             diagnostics.model_latency_ms / 1000
         )
+
+
+_DEGRADED_ANSWER_NOTICE = (
+    "A generated answer is currently unavailable because the language model provider could not be "
+    "reached. The most relevant excerpts from the Northstar knowledge base are shown below -- review "
+    "them directly rather than relying on a generated summary."
+)
+
+
+def _degraded_query_result(
+    service: RagService, question: str, advisor_id: str | None, filters: QueryFilters, exc: Exception,
+) -> QueryResult:
+    """Graceful degradation when the model provider is unavailable
+    (`ModelProviderError` and subclasses, including a translated
+    `CircuitBreakerOpenError`): semantic retrieval still runs -- it has
+    its own, independent failure mode and provider -- so real, grounded
+    excerpts are still useful even with no generated answer. Never
+    fabricates a citation or an answer from general model knowledge;
+    `citations` stays empty because nothing was actually cited, and
+    `retrieved_context` is always populated here regardless of the
+    caller's `include_context` flag, since surfacing raw excerpts is
+    the entire point of this path."""
+    response = service.retriever.retrieve(RetrievalQuery(text=question, top_k=10, filters=filters.as_dict()))
+    retrieved_context = [
+        RetrievedChunk(source_id=f"S{i}", text=result.chunk.text, score=result.score)
+        for i, result in enumerate(response.results, start=1)
+    ]
+    return QueryResult(
+        question=question,
+        answer=_DEGRADED_ANSWER_NOTICE,
+        sufficient_context=False,
+        primary_advisor=advisor_id,
+        warnings=[f"Model provider unavailable: {exc}"],
+        retrieved_context=retrieved_context,
+        degraded=True,
+    )
 
 
 def ask_manual(
@@ -115,14 +154,23 @@ def ask_manual(
                 RetrievedChunk(source_id=block.source_id, text=block.chunk.text, score=block.score)
             )
 
-    with (
-        traced_span("advisor.ask", advisor_id=advisor_id, mode="manual"),
-        advisor_duration_seconds.labels(advisor_id=advisor_id).time(),
-    ):
-        answer = advisor.ask(
-            service, question, filters=filters.as_dict(),
-            on_context_built=_capture if include_context else None,
+    try:
+        with (
+            traced_span("advisor.ask", advisor_id=advisor_id, mode="manual"),
+            advisor_duration_seconds.labels(advisor_id=advisor_id).time(),
+        ):
+            answer = advisor.ask(
+                service, question, filters=filters.as_dict(),
+                on_context_built=_capture if include_context else None,
+            )
+    except ModelProviderError as exc:
+        result = _degraded_query_result(service, question, advisor_id, filters, exc)
+        record_from_context(
+            audit, action="grounded_question_asked", resource_type="advisor", resource_id=advisor_id,
+            metadata={"degraded": True, "sufficient_context": False},
         )
+        return result
+
     advisor_executions_total.labels(advisor_id=advisor_id).inc()
     _record_rag_metrics(answer, mode="manual", advisor_id=advisor_id)
 
@@ -175,8 +223,16 @@ def ask_auto(
     router = AdvisorRouter(service.retriever, list_advisors(), settings)
     orchestrator = AdvisorOrchestrator(service, router, service.llm, rag_settings)
 
-    with traced_span("advisor.ask", mode="auto"):
-        response = orchestrator.ask(question)
+    try:
+        with traced_span("advisor.ask", mode="auto"):
+            response = orchestrator.ask(question)
+    except ModelProviderError as exc:
+        result = _degraded_query_result(service, question, None, QueryFilters(), exc)
+        record_from_context(
+            audit, action="grounded_question_asked", resource_type="advisor", resource_id=None,
+            metadata={"mode": "auto", "degraded": True, "sufficient_context": False},
+        )
+        return result
     warnings.extend(response.warnings)
 
     routing_decisions_total.labels(

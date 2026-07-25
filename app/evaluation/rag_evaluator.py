@@ -109,7 +109,20 @@ def evaluate_case(service: RagService, case: EvalCase, top_k: int = DEFAULT_EVAL
 
 
 def run_evaluation(service: RagService, cases: list[EvalCase], top_k: int = DEFAULT_EVAL_TOP_K) -> list[EvalCaseResult]:
-    return [evaluate_case(service, case, top_k=top_k) for case in cases]
+    """Milestone 8: isolates each case -- one case raising (a provider
+    outage, an unexpected error) is recorded as a failed result rather
+    than crashing the whole batch and losing every already-computed
+    result alongside it."""
+    results = []
+    for case in cases:
+        try:
+            results.append(evaluate_case(service, case, top_k=top_k))
+        except Exception as exc:  # noqa: BLE001 -- deliberately broad: any case-level failure must not lose the rest of the batch
+            logger.warning("Evaluation case '%s' raised an exception: %s", case.id, exc)
+            results.append(
+                EvalCaseResult(case_id=case.id, passed=False, checks={}, notes=[f"Case raised an exception: {exc}"])
+            )
+    return results
 
 
 def _print_report(results: list[EvalCaseResult]) -> None:

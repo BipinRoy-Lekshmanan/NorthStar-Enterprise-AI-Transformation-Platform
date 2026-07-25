@@ -192,3 +192,31 @@ def test_rate_helper_computes_fraction_of_passing_checks(tmp_path):
 
     assert _rate(results, "completed") == 1.0
     assert _rate(results, "final_recommendation_matches") == 0.5
+
+
+def test_a_raising_case_is_isolated_and_does_not_lose_other_results(tmp_path):
+    """Milestone 8: a missing input-file case must not crash the whole
+    batch -- it becomes a failed, final_status='error' result, and every
+    other case's result is still returned intact."""
+    engine = _build_engine(tmp_path)
+    input_file = tmp_path / "input.json"
+    input_file.write_text(
+        json.dumps({
+            "release_name": "r", "services_affected": ["s"], "business_impact": "b", "deployment_strategy": "canary",
+            "rollback_plan": "yes",
+        }),
+        encoding="utf-8",
+    )
+    good_case = WorkflowEvalCase(id="good", workflow_id="production_readiness_review", input_file=str(input_file))
+    broken_case = WorkflowEvalCase(
+        id="broken", workflow_id="production_readiness_review", input_file=str(tmp_path / "does_not_exist.json"),
+    )
+
+    results = run_evaluation(engine, [good_case, broken_case])
+
+    assert [r.case_id for r in results] == ["good", "broken"]
+    good, broken = results
+    assert good.passed is True
+    assert broken.passed is False
+    assert broken.final_status == "error"
+    assert broken.notes and "exception" in broken.notes[0].lower()

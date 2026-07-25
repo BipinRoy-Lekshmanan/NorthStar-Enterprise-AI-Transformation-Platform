@@ -198,7 +198,23 @@ def evaluate_case(engine: WorkflowEngine, case: WorkflowEvalCase) -> WorkflowEva
 
 
 def run_evaluation(engine: WorkflowEngine, cases: list[WorkflowEvalCase]) -> list[WorkflowEvalCaseResult]:
-    return [evaluate_case(engine, case) for case in cases]
+    """Milestone 8: isolates each case -- one case raising (a provider
+    outage, a missing input fixture, an unexpected error) is recorded
+    as a failed result rather than crashing the whole batch and losing
+    every already-computed result alongside it."""
+    results = []
+    for case in cases:
+        try:
+            results.append(evaluate_case(engine, case))
+        except Exception as exc:  # noqa: BLE001 -- deliberately broad: any case-level failure must not lose the rest of the batch
+            logger.warning("Workflow evaluation case '%s' raised an exception: %s", case.id, exc)
+            results.append(
+                WorkflowEvalCaseResult(
+                    case_id=case.id, passed=False, checks={}, notes=[f"Case raised an exception: {exc}"],
+                    final_status="error",
+                )
+            )
+    return results
 
 
 def _rate(results: list[WorkflowEvalCaseResult], check_name: str) -> float:

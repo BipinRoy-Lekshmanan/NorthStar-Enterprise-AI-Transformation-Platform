@@ -85,6 +85,7 @@ class QueryResponse(BaseModel):
     conflicts: list[str]
     diagnostics: dict | None = None
     retrieved_context: list[RetrievedChunkOut] | None = None
+    degraded: bool = False
 
 
 def build_query_response(result: QueryResult, request_id: str | None) -> QueryResponse:
@@ -119,4 +120,5 @@ def build_query_response(result: QueryResult, request_id: str | None) -> QueryRe
             if result.retrieved_context is not None
             else None
         ),
+        degraded=result.degraded,
     )
