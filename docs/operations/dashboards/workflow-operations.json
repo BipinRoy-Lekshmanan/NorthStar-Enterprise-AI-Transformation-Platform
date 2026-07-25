@@ -1,0 +1,82 @@
+{
+  "title": "Northstar Workflow Operations",
+  "description": "Active workflows, awaiting approvals, failed stages, findings by severity, approval wait time, completion rate. Prometheus datasource scraping GET /metrics.",
+  "schemaVersion": 39,
+  "tags": ["northstar", "workflow-operations"],
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Executions awaiting approval (current)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "targets": [{ "expr": "workflows_awaiting_approval" }]
+    },
+    {
+      "id": 2,
+      "title": "Completion rate by workflow",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum by (workflow_id) (rate(workflows_completed_total[1h])) / sum by (workflow_id) (rate(workflows_started_total[1h]))",
+          "legendFormat": "{{workflow_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Started vs completed vs failed vs cancelled",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum(rate(workflows_started_total[15m]))", "legendFormat": "started" },
+        { "expr": "sum(rate(workflows_completed_total[15m]))", "legendFormat": "completed" },
+        { "expr": "sum(rate(workflows_failed_total[15m]))", "legendFormat": "failed" },
+        { "expr": "sum(rate(workflows_cancelled_total[15m]))", "legendFormat": "cancelled/rejected" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Per-stage duration (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, workflow_id, stage_id) (rate(workflow_stage_duration_seconds_bucket[1h])))",
+          "legendFormat": "{{workflow_id}}/{{stage_id}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Findings by severity",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 14, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "sum by (severity) (rate(workflow_findings_total[1h]))", "legendFormat": "{{severity}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Evidence gaps / conflicts",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 14, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "rate(workflow_evidence_gaps_total[1h])", "legendFormat": "evidence gaps" },
+        { "expr": "rate(workflow_conflicts_total[1h])", "legendFormat": "conflicts" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Approval wait time (p50/p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 14, "w": 8, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(workflow_approval_wait_seconds_bucket[6h])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(workflow_approval_wait_seconds_bucket[6h])))", "legendFormat": "p95" }
+      ]
+    }
+  ]
+}

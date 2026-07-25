@@ -1,0 +1,60 @@
+{
+  "title": "Northstar Platform Health",
+  "description": "API availability, readiness, request volume, latency, error rate, provider/vector-store status. Prometheus datasource scraping GET /metrics.",
+  "schemaVersion": 39,
+  "tags": ["northstar", "platform-health"],
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "API request rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (path, status) (rate(api_requests_total[5m]))", "legendFormat": "{{method}} {{path}} {{status}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API p95 latency",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, path) (rate(api_request_duration_seconds_bucket[5m])))", "legendFormat": "{{path}} p95" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "API error rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (error_code) (rate(api_errors_total[5m]))", "legendFormat": "{{error_code}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Active requests",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 8, "w": 6, "h": 8 },
+      "targets": [{ "expr": "api_active_requests" }]
+    },
+    {
+      "id": 5,
+      "title": "Model/embedding provider failures",
+      "type": "timeseries",
+      "gridPos": { "x": 18, "y": 8, "w": 6, "h": 8 },
+      "targets": [
+        { "expr": "sum by (provider, error_type) (rate(provider_failures_total[15m]))", "legendFormat": "{{provider}} {{error_type}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Indexed chunk count (vector-store status proxy)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 16, "w": 6, "h": 6 },
+      "targets": [{ "expr": "knowledge_chunks_indexed" }]
+    }
+  ]
+}

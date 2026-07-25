@@ -1,0 +1,74 @@
+{
+  "title": "Northstar AI Quality",
+  "description": "Sufficient-context rate, citation presence, routing accuracy signals, workflow evaluation results, model-provider failures. Prometheus datasource scraping GET /metrics.",
+  "schemaVersion": 39,
+  "tags": ["northstar", "ai-quality"],
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Sufficient-context rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(rag_questions_total{sufficient_context=\"true\"}[15m])) / sum(rate(rag_questions_total[15m]))",
+          "legendFormat": "sufficient_context rate"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Citations per answer (p50/p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(rag_citations_count_bucket[15m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(rag_citations_count_bucket[15m])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Invalid citations (model-hallucinated source ids)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+      "targets": [{ "expr": "rate(rag_invalid_citations_total[15m])" }]
+    },
+    {
+      "id": 4,
+      "title": "Routing confidence distribution",
+      "type": "heatmap",
+      "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+      "targets": [{ "expr": "sum by (le) (rate(routing_confidence_bucket[15m]))" }]
+    },
+    {
+      "id": 5,
+      "title": "Fallback-routing rate",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(routing_decisions_total{fallback_used=\"true\"}[15m])) / sum(rate(routing_decisions_total[15m]))",
+          "legendFormat": "fallback rate"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Evaluation pass rate (latest run per category)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "targets": [{ "expr": "evaluation_pass_rate", "legendFormat": "{{category}}" }]
+    },
+    {
+      "id": 7,
+      "title": "Model-provider failures by type",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        { "expr": "sum by (provider, error_type) (rate(provider_failures_total[15m]))", "legendFormat": "{{provider}} {{error_type}}" }
+      ]
+    }
+  ]
+}

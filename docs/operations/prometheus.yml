@@ -1,0 +1,15 @@
+# Prometheus scrape config for the Northstar platform's local/portfolio
+# deployment (Milestone 8). Referenced by the `observability` profile in
+# docker-compose.yml. Scrapes the FastAPI container's unauthenticated
+# GET /metrics endpoint -- restrict network access to this port at the
+# reverse-proxy/network-policy layer in any real deployment.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: northstar-api
+    static_configs:
+      - targets: ["api:8000"]
+    metrics_path: /metrics

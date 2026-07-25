@@ -1,0 +1,64 @@
+{
+  "title": "Northstar Knowledge Operations",
+  "description": "Indexed document/chunk counts, ingestion duration, indexing failures, last successful update. Prometheus datasource scraping GET /metrics.",
+  "schemaVersion": 39,
+  "tags": ["northstar", "knowledge-operations"],
+  "time": { "from": "now-7d", "to": "now" },
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Documents discovered (last ingestion run)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "targets": [{ "expr": "knowledge_documents_discovered" }]
+    },
+    {
+      "id": 2,
+      "title": "Chunks currently indexed",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+      "targets": [{ "expr": "knowledge_chunks_indexed" }]
+    },
+    {
+      "id": 3,
+      "title": "Ingestion failures (cumulative)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+      "targets": [{ "expr": "knowledge_ingestion_failures_total" }]
+    },
+    {
+      "id": 4,
+      "title": "Time since last successful indexing operation",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+      "targets": [
+        {
+          "expr": "time() - max(timestamp(knowledge_indexing_duration_seconds_count))",
+          "legendFormat": "seconds since last run"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Indexing duration by operation (p95)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(knowledge_indexing_duration_seconds_bucket[1d])))",
+          "legendFormat": "{{operation}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Ingestion/indexing runs over time",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (operation) (increase(knowledge_indexing_duration_seconds_count[1d]))", "legendFormat": "{{operation}} runs/day" }
+      ]
+    }
+  ]
+}
