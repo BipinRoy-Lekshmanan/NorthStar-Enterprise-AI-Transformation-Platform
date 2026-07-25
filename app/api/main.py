@@ -111,7 +111,11 @@ def create_app() -> FastAPI:
     # body is even read; then the size limit; then request-id/timing.
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=api_settings.max_upload_bytes)
-    app.add_middleware(RateLimitMiddleware, requests_per_minute=api_settings.rate_limit_per_minute)
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=api_settings.rate_limit_per_minute,
+        category_limits=api_settings.rate_limit_category_overrides,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(api_settings.cors_allowed_origins),

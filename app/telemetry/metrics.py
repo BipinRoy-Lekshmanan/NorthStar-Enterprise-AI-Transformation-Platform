@@ -34,6 +34,10 @@ api_errors_total = Counter(
     "api_errors_total", "Total API error responses.", ["method", "path", "error_code"], registry=REGISTRY,
 )
 api_active_requests = Gauge("api_active_requests", "Requests currently being processed.", registry=REGISTRY)
+rate_limit_rejections_total = Counter(
+    "rate_limit_rejections_total", "Requests rejected by the per-category rate limiter.", ["category"],
+    registry=REGISTRY,
+)
 
 # -- RAG / grounded queries -----------------------------------------------------------------------------
 

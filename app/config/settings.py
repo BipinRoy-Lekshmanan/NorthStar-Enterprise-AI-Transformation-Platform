@@ -62,6 +62,14 @@ DEFAULT_API_MAX_QUESTION_LENGTH = 2000
 DEFAULT_API_MAX_UPLOAD_BYTES = 200_000
 DEFAULT_API_REQUEST_TIMEOUT_SECONDS = 60.0
 DEFAULT_API_RATE_LIMIT_PER_MINUTE = 120
+# Per-category overrides (Milestone 8) -- evaluation/administration are
+# deliberately stricter by default: both trigger genuinely expensive or
+# destructive operations (a full evaluation run; ingest/index/rebuild).
+DEFAULT_RATE_LIMIT_QUERY_PER_MINUTE = 60
+DEFAULT_RATE_LIMIT_ADVISOR_PER_MINUTE = 60
+DEFAULT_RATE_LIMIT_WORKFLOW_PER_MINUTE = 30
+DEFAULT_RATE_LIMIT_EVALUATION_PER_MINUTE = 10
+DEFAULT_RATE_LIMIT_ADMINISTRATION_PER_MINUTE = 10
 DEFAULT_DEBUG = False
 
 DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
@@ -474,6 +482,7 @@ class ApiSettings:
     request_timeout_seconds: float
     audit_log_dir: Path
     rate_limit_per_minute: int
+    rate_limit_category_overrides: dict[str, int]
     debug: bool
 
     @classmethod
@@ -496,6 +505,17 @@ class ApiSettings:
             rate_limit_per_minute=_parse_int(
                 env, "API_RATE_LIMIT_PER_MINUTE", DEFAULT_API_RATE_LIMIT_PER_MINUTE
             ),
+            rate_limit_category_overrides={
+                "query": _parse_int(env, "RATE_LIMIT_QUERY_PER_MINUTE", DEFAULT_RATE_LIMIT_QUERY_PER_MINUTE),
+                "advisor": _parse_int(env, "RATE_LIMIT_ADVISOR_PER_MINUTE", DEFAULT_RATE_LIMIT_ADVISOR_PER_MINUTE),
+                "workflow": _parse_int(env, "RATE_LIMIT_WORKFLOW_PER_MINUTE", DEFAULT_RATE_LIMIT_WORKFLOW_PER_MINUTE),
+                "evaluation": _parse_int(
+                    env, "RATE_LIMIT_EVALUATION_PER_MINUTE", DEFAULT_RATE_LIMIT_EVALUATION_PER_MINUTE
+                ),
+                "administration": _parse_int(
+                    env, "RATE_LIMIT_ADMINISTRATION_PER_MINUTE", DEFAULT_RATE_LIMIT_ADMINISTRATION_PER_MINUTE
+                ),
+            },
             debug=_parse_bool(env, "DEBUG", DEFAULT_DEBUG),
         )
         settings.validate()
@@ -531,6 +551,12 @@ class ApiSettings:
             raise ConfigurationError(
                 f"API_RATE_LIMIT_PER_MINUTE must be a positive integer, got {self.rate_limit_per_minute}."
             )
+
+        for category, limit in self.rate_limit_category_overrides.items():
+            if limit <= 0:
+                raise ConfigurationError(
+                    f"Rate limit for category '{category}' must be a positive integer, got {limit}."
+                )
 
 
 @dataclass(frozen=True)

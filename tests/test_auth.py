@@ -134,6 +134,23 @@ def test_api_settings_invalid_rate_limit_raises():
         ApiSettings.from_env(env={"API_RATE_LIMIT_PER_MINUTE": "0"})
 
 
+def test_api_settings_rate_limit_category_defaults():
+    settings = ApiSettings.from_env(env={})
+    assert settings.rate_limit_category_overrides == {
+        "query": 60, "advisor": 60, "workflow": 30, "evaluation": 10, "administration": 10,
+    }
+
+
+def test_api_settings_rate_limit_category_override_from_env():
+    settings = ApiSettings.from_env(env={"RATE_LIMIT_EVALUATION_PER_MINUTE": "3"})
+    assert settings.rate_limit_category_overrides["evaluation"] == 3
+
+
+def test_api_settings_invalid_category_rate_limit_raises():
+    with pytest.raises(ConfigurationError, match="administration"):
+        ApiSettings.from_env(env={"RATE_LIMIT_ADMINISTRATION_PER_MINUTE": "0"})
+
+
 # -- AuthSettings -----------------------------------------------------------------------------
 
 
