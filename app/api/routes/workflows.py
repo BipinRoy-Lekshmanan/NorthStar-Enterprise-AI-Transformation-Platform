@@ -10,9 +10,9 @@ separate `approvals` router -- reviewer-tier -- not here.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
-from app.api.dependencies.services import get_audit_store, get_lock_registry, get_workflow_engine
+from app.api.dependencies.services import get_audit_store, get_idempotency_store, get_lock_registry, get_workflow_engine
 from app.api.errors import ApiError, ErrorCode
 from app.api.schemas.common import DEFAULT_PAGE_SIZE, PaginatedResponse, paginate_slice, validate_pagination
 from app.api.schemas.workflows import (
@@ -29,6 +29,7 @@ from app.api.schemas.workflows import (
     build_workflow_example_out,
     build_workflow_summary_out,
 )
+from app.api.services.idempotency_service import check_idempotency, save_idempotent_response
 from app.api.services.workflow_service import (
     cancel_execution,
     collect_conflicts,
@@ -51,6 +52,7 @@ from app.auth.users import User
 from app.export.common import build_workflow_report_export_envelope
 from app.export.markdown_renderer import render_workflow_report_markdown
 from app.resilience.concurrency import LockRegistry
+from app.resilience.idempotency import IdempotencyStore
 from app.workflows.engine import WorkflowEngine
 from app.workflows.synthesis import dedupe_citations
 
@@ -125,12 +127,23 @@ def execute_workflow_route(
     request: Request,
     engine: WorkflowEngine = Depends(get_workflow_engine),
     audit_store: AuditStore = Depends(get_audit_store),
+    idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> ExecutionDetailOut:
+    idempotency_endpoint = f"workflow_execute:{workflow_id}"
+    request_body = body.model_dump(mode="json")
+    cached = check_idempotency(request, idempotency_store, idempotency_endpoint, request_body)
+    if cached is not None:
+        return JSONResponse(status_code=cached.status_code, content=cached.body)
+
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     execution = execute_workflow(engine, workflow_id, body.inputs, audit=audit)
-    return _detail_out(execution)
+    result = _detail_out(execution)
+    save_idempotent_response(
+        request, idempotency_store, idempotency_endpoint, request_body, 200, result.model_dump(mode="json"),
+    )
+    return result
 
 
 @router.get(
@@ -154,12 +167,20 @@ def resume_execution_route(
     engine: WorkflowEngine = Depends(get_workflow_engine),
     audit_store: AuditStore = Depends(get_audit_store),
     lock_registry: LockRegistry = Depends(get_lock_registry),
+    idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
     user: User = Depends(require_role(Role.ENGINEER)),
 ) -> ExecutionDetailOut:
+    idempotency_endpoint = f"workflow_resume:{execution_id}"
+    cached = check_idempotency(request, idempotency_store, idempotency_endpoint, {})
+    if cached is not None:
+        return JSONResponse(status_code=cached.status_code, content=cached.body)
+
     request_id = getattr(request.state, "request_id", None)
     audit = AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id)
     execution = resume_execution(engine, execution_id, audit=audit, lock_registry=lock_registry)
-    return _detail_out(execution)
+    result = _detail_out(execution)
+    save_idempotent_response(request, idempotency_store, idempotency_endpoint, {}, 200, result.model_dump(mode="json"))
+    return result
 
 
 @router.post(

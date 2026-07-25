@@ -220,6 +220,17 @@ def test_admin_can_run_ingestion(client):
     assert body["chunks_created"] > 0
 
 
+def test_ingest_with_the_same_idempotency_key_does_not_repeat_side_effects(client):
+    headers = {**ADMIN_HEADERS, "Idempotency-Key": "ingest-retry-1"}
+
+    first = client.post("/api/v1/knowledge/ingest", headers=headers)
+    second = client.post("/api/v1/knowledge/ingest", headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+
+
 def test_admin_can_run_incremental_index(client):
     response = client.post("/api/v1/knowledge/index", headers=ADMIN_HEADERS)
     assert response.status_code == 200

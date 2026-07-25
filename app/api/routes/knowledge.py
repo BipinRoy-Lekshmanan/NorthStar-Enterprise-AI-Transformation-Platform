@@ -8,9 +8,11 @@ viewer permission); ingestion/indexing/rebuild are administrator-level
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import JSONResponse
 
 from app.api.dependencies.services import (
     get_audit_store,
+    get_idempotency_store,
     get_ingestion_settings,
     get_lock_registry,
     get_rag_service,
@@ -29,6 +31,7 @@ from app.api.schemas.knowledge import (
     build_document_out,
     build_search_result_out,
 )
+from app.api.services.idempotency_service import check_idempotency, save_idempotent_response
 from app.api.services.knowledge_service import (
     DocumentFilter,
     build_catalog,
@@ -48,6 +51,7 @@ from app.auth.users import User
 from app.config.settings import IngestionSettings, RetrievalSettings
 from app.rag.pipeline import RagService
 from app.resilience.concurrency import LockRegistry
+from app.resilience.idempotency import IdempotencyStore
 
 router = APIRouter()
 
@@ -131,15 +135,22 @@ def ingest_route(
     request: Request,
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     audit_store: AuditStore = Depends(get_audit_store),
+    idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
     user: User = Depends(require_role(Role.ADMINISTRATOR)),
 ) -> IngestionSummaryOut:
+    cached = check_idempotency(request, idempotency_store, "knowledge_ingest", {})
+    if cached is not None:
+        return JSONResponse(status_code=cached.status_code, content=cached.body)
+
     summary = run_ingestion(ingestion_settings)
     request_id = getattr(request.state, "request_id", None)
     record_from_context(
         AuditContext(store=audit_store, actor=user.username, role=user.role.value, request_id=request_id),
         action="ingestion_run", resource_type="knowledge_base", metadata=summary,
     )
-    return IngestionSummaryOut(**summary)
+    result = IngestionSummaryOut(**summary)
+    save_idempotent_response(request, idempotency_store, "knowledge_ingest", {}, 200, result.model_dump(mode="json"))
+    return result
 
 
 @router.post(
@@ -150,8 +161,13 @@ def index_route(
     ingestion_settings: IngestionSettings = Depends(get_ingestion_settings),
     retrieval_settings: RetrievalSettings = Depends(get_retrieval_settings),
     audit_store: AuditStore = Depends(get_audit_store),
+    idempotency_store: IdempotencyStore = Depends(get_idempotency_store),
     user: User = Depends(require_role(Role.ADMINISTRATOR)),
 ) -> IndexSummaryOut:
+    cached = check_idempotency(request, idempotency_store, "knowledge_index", {})
+    if cached is not None:
+        return JSONResponse(status_code=cached.status_code, content=cached.body)
+
     report = run_incremental_index(ingestion_settings, retrieval_settings)
     request_id = getattr(request.state, "request_id", None)
     record_from_context(
@@ -159,7 +175,9 @@ def index_route(
         action="indexing_run", resource_type="vector_store",
         metadata={"added": report.added, "removed": report.removed, "unchanged": report.unchanged, "total": report.total},
     )
-    return IndexSummaryOut(added=report.added, removed=report.removed, unchanged=report.unchanged, total=report.total)
+    result = IndexSummaryOut(added=report.added, removed=report.removed, unchanged=report.unchanged, total=report.total)
+    save_idempotent_response(request, idempotency_store, "knowledge_index", {}, 200, result.model_dump(mode="json"))
+    return result
 
 
 @router.post(

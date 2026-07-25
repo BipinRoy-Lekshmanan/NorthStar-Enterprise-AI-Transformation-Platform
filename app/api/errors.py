@@ -58,6 +58,11 @@ class ErrorCode(str, Enum):
     # running, a resume/approval already being processed for this
     # execution) was rejected rather than double-processed.
     CONCURRENCY_CONFLICT = "CONCURRENCY_CONFLICT"
+    # Milestone 8: the same `Idempotency-Key` was reused on the same
+    # endpoint with a materially different request body -- a client bug
+    # (idempotency keys must be unique per distinct request), not a
+    # retry.
+    IDEMPOTENCY_KEY_REUSED = "IDEMPOTENCY_KEY_REUSED"
 
 
 class ApiError(Exception):

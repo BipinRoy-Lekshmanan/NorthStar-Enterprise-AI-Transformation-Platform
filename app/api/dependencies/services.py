@@ -26,6 +26,7 @@ from app.config.settings import (
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import RagService
 from app.resilience.concurrency import LockRegistry
+from app.resilience.idempotency import IdempotencyStore
 from app.workflows.engine import WorkflowEngine
 
 
@@ -51,6 +52,10 @@ def get_started_at(request: Request) -> datetime:
 
 def get_lock_registry(request: Request) -> LockRegistry:
     return request.app.state.lock_registry
+
+
+def get_idempotency_store(request: Request) -> IdempotencyStore:
+    return request.app.state.idempotency_store
 
 
 def get_audit_store(request: Request) -> AuditStore:

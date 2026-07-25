@@ -182,6 +182,55 @@ def test_engineer_can_execute_workflow_and_it_pauses_for_approval(client):
     assert body["execution_id"]
 
 
+def test_execute_with_the_same_idempotency_key_replays_the_first_execution(client):
+    headers = {**ENGINEER_HEADERS, "Idempotency-Key": "retry-key-1"}
+
+    first = client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},
+        headers=headers,
+    )
+    second = client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["execution_id"] == second.json()["execution_id"]
+    # Confirms the second call never re-ran the engine -- only one execution exists.
+    listing = client.get("/api/v1/workflows/executions", headers=VIEWER_HEADERS)
+    assert listing.json()["total_items"] == 1
+
+
+def test_execute_without_an_idempotency_key_creates_a_new_execution_each_time(client):
+    first = client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},
+        headers=ENGINEER_HEADERS,
+    )
+    second = client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},
+        headers=ENGINEER_HEADERS,
+    )
+
+    assert first.json()["execution_id"] != second.json()["execution_id"]
+
+
+def test_execute_with_a_reused_idempotency_key_but_a_different_body_is_rejected(client):
+    headers = {**ENGINEER_HEADERS, "Idempotency-Key": "retry-key-2"}
+    client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},
+        headers=headers,
+    )
+
+    different_inputs = {**_ARCHITECTURE_REVIEW_INPUTS, "solution_name": "A Different Solution"}
+    response = client.post(
+        "/api/v1/workflows/architecture_review/execute", json={"inputs": different_inputs}, headers=headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
 def test_list_executions_returns_the_new_execution(client):
     client.post(
         "/api/v1/workflows/architecture_review/execute", json={"inputs": _ARCHITECTURE_REVIEW_INPUTS},

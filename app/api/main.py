@@ -30,6 +30,7 @@ from app.config.environment import current_environment
 from app.config.settings import (
     ApiSettings,
     AuthSettings,
+    DatabaseSettings,
     EvaluationSettings,
     IngestionSettings,
     RagSettings,
@@ -38,9 +39,11 @@ from app.config.settings import (
     TelemetrySettings,
     WorkflowSettings,
 )
+from app.db.engine import build_engine, build_session_factory, create_all
 from app.evaluation.run_store import EvaluationRunStore
 from app.rag.pipeline import build_default_rag_service
 from app.resilience.concurrency import LockRegistry
+from app.resilience.idempotency import IdempotencyStore
 from app.telemetry.tracing import configure_tracing
 from app.workflows.engine import WorkflowEngine
 from app.workflows.store import WorkflowStore
@@ -55,6 +58,13 @@ async def lifespan(app: FastAPI):
     stores) are added here in later steps."""
     app.state.started_at = datetime.now(timezone.utc)
     app.state.lock_registry = LockRegistry()
+
+    db_engine = build_engine(DatabaseSettings.from_env().database_url)
+    # Safety net for dev/test environments that never ran `python -m
+    # app.db upgrade` -- a no-op (checkfirst) if Alembic already created
+    # the schema, so it never conflicts with real migrations.
+    create_all(db_engine)
+    app.state.idempotency_store = IdempotencyStore(build_session_factory(db_engine))
 
     telemetry_settings = TelemetrySettings.from_env()
     configure_tracing(

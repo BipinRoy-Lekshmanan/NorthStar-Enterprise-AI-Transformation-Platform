@@ -202,6 +202,26 @@ def test_approve_resumes_and_completes_the_execution(client):
     assert body["citations"]
 
 
+def test_deciding_with_the_same_idempotency_key_replays_the_first_decision(client):
+    execution_id = _execute_and_pause(client)
+    headers = {**REVIEWER_HEADERS, "Idempotency-Key": "decide-retry-1"}
+
+    first = client.post(
+        f"/api/v1/approvals/{execution_id}/decide", json={"decision": "approve", "comments": "Looks good."},
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/approvals/{execution_id}/decide", json={"decision": "approve", "comments": "Looks good."},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    # Without idempotency this would be a 409 (already decided) -- the
+    # replay short-circuits before ever reaching that precondition check.
+    assert second.status_code == 200
+    assert first.json() == second.json()
+
+
 def test_deciding_an_already_decided_execution_returns_409(client):
     execution_id = _execute_and_pause(client)
     client.post(

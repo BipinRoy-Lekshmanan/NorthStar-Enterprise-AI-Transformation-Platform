@@ -174,6 +174,19 @@ def test_triggering_a_run_records_an_audit_event(client, tmp_path):
     assert events[0].resource_id == run_id
 
 
+def test_run_with_the_same_idempotency_key_replays_the_first_run(client):
+    headers = {**ENGINEER_HEADERS, "Idempotency-Key": "eval-retry-1"}
+
+    first = client.post("/api/v1/evaluation/runs", json={"category": "rag"}, headers=headers)
+    second = client.post("/api/v1/evaluation/runs", json={"category": "rag"}, headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["run_id"] == second.json()["run_id"]
+    listing = client.get("/api/v1/evaluation/runs", headers=VIEWER_HEADERS)
+    assert listing.json()["total_items"] == 1
+
+
 def test_a_run_is_persisted_and_listed(client):
     executed = client.post("/api/v1/evaluation/runs", json={"category": "workflows"}, headers=ENGINEER_HEADERS)
     run_id = executed.json()["run_id"]
