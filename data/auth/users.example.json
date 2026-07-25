@@ -2,21 +2,25 @@
   {
     "api_key": "viewer-example-key-change-me",
     "username": "viewer.example",
-    "role": "viewer"
+    "role": "viewer",
+    "enabled": true
   },
   {
     "api_key": "engineer-example-key-change-me",
     "username": "engineer.example",
-    "role": "engineer"
+    "role": "engineer",
+    "enabled": true
   },
   {
     "api_key": "reviewer-example-key-change-me",
     "username": "reviewer.example",
-    "role": "reviewer"
+    "role": "reviewer",
+    "enabled": true
   },
   {
     "api_key": "administrator-example-key-change-me",
     "username": "administrator.example",
-    "role": "administrator"
+    "role": "administrator",
+    "enabled": true
   }
 ]

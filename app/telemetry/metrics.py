@@ -38,6 +38,9 @@ rate_limit_rejections_total = Counter(
     "rate_limit_rejections_total", "Requests rejected by the per-category rate limiter.", ["category"],
     registry=REGISTRY,
 )
+auth_failures_total = Counter(
+    "auth_failures_total", "Failed authentication attempts.", ["reason"], registry=REGISTRY,
+)
 
 # -- RAG / grounded queries -----------------------------------------------------------------------------
 

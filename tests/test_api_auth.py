@@ -51,6 +51,7 @@ def users_file(tmp_path, monkeypatch):
         json.dumps([
             {"api_key": "viewer-key", "username": "viewer-user", "role": "viewer"},
             {"api_key": "admin-key", "username": "admin-user", "role": "administrator"},
+            {"api_key": "disabled-key", "username": "disabled-user", "role": "viewer", "enabled": False},
         ]),
         encoding="utf-8",
     )
@@ -82,7 +83,7 @@ def test_valid_api_key_returns_resolved_user(client):
     response = client.get("/api/v1/auth/me", headers={"X-API-Key": "viewer-key"})
     assert response.status_code == 200
     body = response.json()
-    assert body == {"username": "viewer-user", "role": "viewer"}
+    assert body == {"username": "viewer-user", "role": "viewer", "enabled": True}
     assert "api_key" not in body
 
 
@@ -90,6 +91,50 @@ def test_administrator_key_resolves_to_administrator_role(client):
     response = client.get("/api/v1/auth/me", headers={"X-API-Key": "admin-key"})
     assert response.status_code == 200
     assert response.json()["role"] == "administrator"
+
+
+def test_disabled_users_key_is_rejected_like_an_invalid_key(client):
+    response = client.get("/api/v1/auth/me", headers={"X-API-Key": "disabled-key"})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_failed_auth_attempts_are_logged(client, caplog):
+    with caplog.at_level("WARNING"):
+        client.get("/api/v1/auth/me")
+        client.get("/api/v1/auth/me", headers={"X-API-Key": "not-a-real-key"})
+        client.get("/api/v1/auth/me", headers={"X-API-Key": "disabled-key"})
+
+    assert "missing X-API-Key header" in caplog.text
+    assert "unrecognized API key" in caplog.text
+    assert "disabled-user" in caplog.text
+    # The raw invalid key is never written to the log.
+    assert "not-a-real-key" not in caplog.text
+
+
+def _auth_failure_count(reason: str) -> float:
+    from prometheus_client import parser
+
+    from app.telemetry.metrics import render_latest
+
+    body, _ = render_latest()
+    families = parser.text_string_to_metric_families(body.decode("utf-8"))
+    total = 0.0
+    for family in families:
+        if family.name != "auth_failures":
+            continue
+        for sample in family.samples:
+            if sample.labels.get("reason") == reason:
+                total += sample.value
+    return total
+
+
+def test_failed_auth_attempts_increment_the_auth_failures_metric(client):
+    before = _auth_failure_count("invalid_key")
+    client.get("/api/v1/auth/me", headers={"X-API-Key": "not-a-real-key"})
+    after = _auth_failure_count("invalid_key")
+
+    assert after == before + 1
 
 
 # -- startup validation -----------------------------------------------------------------

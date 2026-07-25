@@ -22,6 +22,7 @@ class User(BaseModel):
     username: str
     role: Role
     api_key: str = Field(exclude=True)  # never serialized into an API response
+    enabled: bool = True  # set false in the users file to revoke access without deleting the record
 
 
 class UserDirectoryError(Exception):

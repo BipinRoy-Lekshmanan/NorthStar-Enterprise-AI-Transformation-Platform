@@ -6,8 +6,9 @@ import json
 
 import pytest
 
+from app.auth.dependencies import _find_user_by_api_key
 from app.auth.roles import Role, role_at_least
-from app.auth.users import UserDirectoryError, load_users
+from app.auth.users import User, UserDirectoryError, load_users
 from app.config.settings import ApiSettings, AuthSettings, ConfigurationError
 
 # -- roles -----------------------------------------------------------------------------
@@ -54,7 +55,7 @@ def test_api_key_is_excluded_from_serialization(tmp_path):
     user = load_users(path)["secret-key"]
     dumped = user.model_dump()
     assert "api_key" not in dumped
-    assert dumped == {"username": "alice", "role": Role.VIEWER}
+    assert dumped == {"username": "alice", "role": Role.VIEWER, "enabled": True}
 
 
 def test_missing_users_file_raises_clear_error(tmp_path):
@@ -88,6 +89,42 @@ def test_empty_users_file_raises_clear_error(tmp_path):
     path = _write_users(tmp_path, [])
     with pytest.raises(UserDirectoryError, match="contains no users"):
         load_users(path)
+
+
+def test_user_enabled_defaults_to_true(tmp_path):
+    path = _write_users(tmp_path, [{"api_key": "k1", "username": "alice", "role": "viewer"}])
+    assert load_users(path)["k1"].enabled is True
+
+
+def test_user_can_be_explicitly_disabled(tmp_path):
+    path = _write_users(tmp_path, [
+        {"api_key": "k1", "username": "alice", "role": "viewer", "enabled": False},
+    ])
+    assert load_users(path)["k1"].enabled is False
+
+
+# -- _find_user_by_api_key (constant-time comparison) -----------------------------------------------------------------------------
+
+
+def test_find_user_by_api_key_matches_the_correct_user():
+    alice = User(username="alice", role=Role.VIEWER, api_key="alice-key")
+    bob = User(username="bob", role=Role.ADMINISTRATOR, api_key="bob-key")
+    users = {"alice-key": alice, "bob-key": bob}
+
+    assert _find_user_by_api_key(users, "alice-key") is alice
+    assert _find_user_by_api_key(users, "bob-key") is bob
+
+
+def test_find_user_by_api_key_returns_none_for_an_unknown_key():
+    alice = User(username="alice", role=Role.VIEWER, api_key="alice-key")
+    assert _find_user_by_api_key({"alice-key": alice}, "not-a-real-key") is None
+
+
+def test_find_user_by_api_key_does_not_match_a_prefix_or_substring():
+    alice = User(username="alice", role=Role.VIEWER, api_key="alice-key")
+    users = {"alice-key": alice}
+    assert _find_user_by_api_key(users, "alice-key-extra") is None
+    assert _find_user_by_api_key(users, "alice-ke") is None
 
 
 def test_real_example_users_file_loads_successfully():
