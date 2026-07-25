@@ -26,3 +26,6 @@ audit_log/*.jsonl
 
 # local user directory (real credentials) -- data/auth/users.example.json stays committed
 data/auth/users.json
+
+# generated operational SQLite database (Milestone 8)
+data/app.db

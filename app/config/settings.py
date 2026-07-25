@@ -77,6 +77,8 @@ DEFAULT_RATE_LIMIT_ADVISOR_PER_MINUTE = 60
 DEFAULT_RATE_LIMIT_WORKFLOW_PER_MINUTE = 30
 DEFAULT_RATE_LIMIT_EVALUATION_PER_MINUTE = 10
 DEFAULT_RATE_LIMIT_ADMINISTRATION_PER_MINUTE = 10
+
+DEFAULT_DATABASE_FILE = "data/app.db"
 DEFAULT_DEBUG = False
 
 DEFAULT_AUTH_USERS_FILE = "data/auth/users.json"
@@ -661,6 +663,29 @@ class TelemetrySettings:
 
     def validate(self) -> None:
         pass  # nothing to reject: a bare bool + an optional URL string, both already parsed safely
+
+
+@dataclass(frozen=True)
+class DatabaseSettings:
+    """Validated configuration for the SQLite-backed operational store
+    (Milestone 8) -- audit events, idempotency records, background
+    operations, and usage events. This is deliberately *not* used for
+    `WorkflowStore`/`EvaluationRunStore` (Milestone 6/7's tested,
+    atomic-write JSON-file stores stay exactly as they are)."""
+
+    database_url: str
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "DatabaseSettings":
+        env = env if env is not None else os.environ
+        default_url = f"sqlite:///{(PROJECT_ROOT / DEFAULT_DATABASE_FILE).as_posix()}"
+        settings = cls(database_url=env.get("DATABASE_URL", default_url))
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        if not self.database_url.strip():
+            raise ConfigurationError("DATABASE_URL must not be empty.")
 
 
 def _parse_int(env: Mapping[str, str], key: str, default: int) -> int:
