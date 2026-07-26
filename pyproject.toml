@@ -1,7 +1,7 @@
 [project]
-name = "northstar-enterprise-ai-transformation-platform"
+name = "haie-platform"
 version = "0.8.0"
-description = "Northstar Enterprise AI Transformation Platform -- a portfolio reference implementation of an internal enterprise AI platform (RAG, advisors, workflows, evaluation, API/UI, and production-hardening operations)."
+description = "HAIE Platform -- the reference implementation of Human-AI Enterprise Engineering (RAG, advisors, workflows, evaluation, API/UI, and production-hardening operations), evaluated against a fictional reference enterprise, NorthStar Lending Corporation."
 requires-python = ">=3.11"
 readme = "README.md"
 

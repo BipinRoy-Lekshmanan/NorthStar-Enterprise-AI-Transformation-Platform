@@ -94,10 +94,10 @@ jobs:
       # as valid YAML). A GitHub Actions runner has Docker preinstalled,
       # so this job is the actual proof the images build.
       - name: Build API image
-        run: docker build -f Dockerfile.api -t northstar-api:ci .
+        run: docker build -f Dockerfile.api -t haie-api:ci .
 
       - name: Build UI image
-        run: docker build -f Dockerfile.ui -t northstar-ui:ci .
+        run: docker build -f Dockerfile.ui -t haie-ui:ci .
 
       # Images are built, not pushed -- there's no registry configured
       # for this portfolio project. Pushing to a real registry (GHCR,

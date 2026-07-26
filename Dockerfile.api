@@ -20,8 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 FROM python:3.11-slim AS runtime
 
 # Non-root user -- the API process never needs root, and never should.
-RUN groupadd --gid 1000 northstar \
-    && useradd --uid 1000 --gid northstar --create-home --shell /usr/sbin/nologin northstar
+RUN groupadd --gid 1000 haie \
+    && useradd --uid 1000 --gid haie --create-home --shell /usr/sbin/nologin haie
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
@@ -43,9 +43,9 @@ COPY alembic.ini ./alembic.ini
 # volumes, created here too so the image is self-contained even when
 # run standalone (`docker run`) without any mounted volume.
 RUN mkdir -p /app/data /app/vector_store /app/workflow_store /app/audit_log /app/evaluation_runs /app/data/processed \
-    && chown -R northstar:northstar /app
+    && chown -R haie:haie /app
 
-USER northstar
+USER haie
 
 EXPOSE 8000
 

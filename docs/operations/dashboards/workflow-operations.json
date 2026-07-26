@@ -1,8 +1,8 @@
 {
-  "title": "Northstar Workflow Operations",
+  "title": "HAIE Workflow Operations",
   "description": "Active workflows, awaiting approvals, failed stages, findings by severity, approval wait time, completion rate. Prometheus datasource scraping GET /metrics.",
   "schemaVersion": 39,
-  "tags": ["northstar", "workflow-operations"],
+  "tags": ["haie", "workflow-operations"],
   "time": { "from": "now-24h", "to": "now" },
   "refresh": "1m",
   "panels": [

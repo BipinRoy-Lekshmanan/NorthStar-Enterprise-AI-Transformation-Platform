@@ -26,7 +26,10 @@
   unimplemented placeholders.
 - **Repo is a standalone git repository** nested inside
   `C:\Users\bipin\projects\` (separate from whatever the parent folder
-  tracks), pushed to `github.com/BipinRoy-Lekshmanan/NorthStar-Enterprise-AI-Transformation-Platform`.
+  tracks), pushed to `github.com/BipinRoy-Lekshmanan/haie-platform`
+  (renamed from `NorthStar-Enterprise-AI-Transformation-Platform` when
+  the project was rebranded as the HAIE Platform, keeping NorthStar
+  Lending Corporation as the unchanged fictional reference enterprise).
 
 ## Milestone 2 — Semantic Indexing & Retrieval
 

@@ -11,7 +11,7 @@ client = TestClient(app)
 
 
 def test_app_has_expected_metadata():
-    assert app.title == "Northstar Enterprise AI Transformation Platform"
+    assert app.title == "HAIE Platform"
     assert app.version == APP_VERSION
 
 
@@ -25,7 +25,7 @@ def test_openapi_schema_generates_without_error():
     response = client.get("/openapi.json")
     assert response.status_code == 200
     schema = response.json()
-    assert schema["info"]["title"] == "Northstar Enterprise AI Transformation Platform"
+    assert schema["info"]["title"] == "HAIE Platform"
     assert "/api/v1/health" in schema["paths"]
 
 

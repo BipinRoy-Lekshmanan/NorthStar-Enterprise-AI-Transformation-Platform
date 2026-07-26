@@ -1,6 +1,8 @@
 # app/
 
-Application source for the Northstar Enterprise AI Transformation Platform.
+Application source for the HAIE Platform (the reference implementation of
+Human-AI Enterprise Engineering), demonstrated against NorthStar Lending
+Corporation as its reference enterprise.
 
 ## Implemented (Milestone 1)
 

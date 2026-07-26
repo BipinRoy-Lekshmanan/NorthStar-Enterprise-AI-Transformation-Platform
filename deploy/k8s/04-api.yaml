@@ -1,7 +1,7 @@
 # API Deployment + Service.
 #
 # replicas: 1 is deliberate, not a placeholder to bump later without
-# thought: northstar-data (SQLite, ReadWriteOnce) and the local
+# thought: haie-data (SQLite, ReadWriteOnce) and the local
 # vector/workflow stores are single-writer. Scaling this past 1 would
 # need, at minimum: DATABASE_URL pointed at a real multi-writer
 # database (Postgres, etc.), a shared/networked vector store, and a
@@ -13,10 +13,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: northstar-api
-  namespace: northstar
+  name: haie-api
+  namespace: haie
   labels:
-    app.kubernetes.io/name: northstar-api
+    app.kubernetes.io/name: haie-api
 spec:
   replicas: 1
   strategy:
@@ -26,11 +26,11 @@ spec:
     # being replaced.
   selector:
     matchLabels:
-      app.kubernetes.io/name: northstar-api
+      app.kubernetes.io/name: haie-api
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: northstar-api
+        app.kubernetes.io/name: haie-api
     spec:
       securityContext:
         runAsNonRoot: true
@@ -42,26 +42,26 @@ spec:
       containers:
         - name: api
           # Replace with a real registry path once one exists for this
-          # project (e.g. ghcr.io/<org>/northstar-api:0.8.0); built but
+          # project (e.g. ghcr.io/<org>/haie-api:0.8.0); built but
           # not pushed anywhere by .github/workflows/ci.yml today.
-          image: northstar-api:0.8.0
+          image: haie-api:0.8.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8000
           envFrom:
             - configMapRef:
-                name: northstar-api-config
+                name: haie-api-config
           env:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: northstar-provider-keys
+                  name: haie-provider-keys
                   key: OPENAI_API_KEY
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: northstar-provider-keys
+                  name: haie-provider-keys
                   key: LLM_API_KEY
           resources:
             requests:
@@ -111,33 +111,33 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: northstar-data
+            claimName: haie-data
         - name: vector-store
           persistentVolumeClaim:
-            claimName: northstar-vector-store
+            claimName: haie-vector-store
         - name: workflow-store
           persistentVolumeClaim:
-            claimName: northstar-workflow-store
+            claimName: haie-workflow-store
         - name: audit-log
           persistentVolumeClaim:
-            claimName: northstar-audit-log
+            claimName: haie-audit-log
         - name: evaluation-runs
           persistentVolumeClaim:
-            claimName: northstar-evaluation-runs
+            claimName: haie-evaluation-runs
         - name: auth-users
           secret:
-            secretName: northstar-auth-users
+            secretName: haie-auth-users
         - name: tmp
           emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: northstar-api
-  namespace: northstar
+  name: haie-api
+  namespace: haie
 spec:
   selector:
-    app.kubernetes.io/name: northstar-api
+    app.kubernetes.io/name: haie-api
   ports:
     - name: http
       port: 8000

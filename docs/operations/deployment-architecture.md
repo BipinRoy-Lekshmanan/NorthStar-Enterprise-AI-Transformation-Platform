@@ -79,7 +79,7 @@ prefixes:
 
 | File | Contents |
 |---|---|
-| `00-namespace.yaml` | The `northstar` namespace |
+| `00-namespace.yaml` | The `haie` namespace |
 | `01-configmap.yaml` | Non-secret env vars for the API and UI |
 | `02-secrets.example.yaml` | **Placeholder values only** — provider API keys and the `AUTH_USERS_FILE` JSON, mounted as a Secret-backed volume, not env vars |
 | `03-pvc.yaml` | Five `ReadWriteOnce` PVCs mirroring `docker-compose.yml`'s four named volumes, plus `audit_log` |
@@ -90,7 +90,7 @@ prefixes:
 
 ### Why the API runs a single replica
 
-SQLite (the `northstar-data` PVC) and the local vector/workflow stores
+SQLite (the `haie-data` PVC) and the local vector/workflow stores
 are single-writer. `04-api.yaml` runs `replicas: 1` with
 `strategy: Recreate` (not a rolling update — a second pod would
 briefly try to open the same `ReadWriteOnce` PVCs, and the same SQLite

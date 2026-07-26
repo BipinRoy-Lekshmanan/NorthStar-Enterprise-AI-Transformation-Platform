@@ -1,8 +1,8 @@
 {
-  "title": "Northstar AI Quality",
+  "title": "HAIE AI Quality",
   "description": "Sufficient-context rate, citation presence, routing accuracy signals, workflow evaluation results, model-provider failures. Prometheus datasource scraping GET /metrics.",
   "schemaVersion": 39,
-  "tags": ["northstar", "ai-quality"],
+  "tags": ["haie", "ai-quality"],
   "time": { "from": "now-24h", "to": "now" },
   "refresh": "1m",
   "panels": [

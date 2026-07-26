@@ -3,10 +3,10 @@
 # api_workflow_store, api_evaluation_runs), plus audit_log which
 # production_checks.py still validates as a writable directory even
 # though AuditStore itself now lives in the SQLite DB under
-# northstar-data (Milestone 8, Task #98).
+# haie-data (Milestone 8, Task #98).
 #
 # All ReadWriteOnce: the API Deployment (04-api.yaml) intentionally
-# runs a single replica, because SQLite (northstar-data) and the local
+# runs a single replica, because SQLite (haie-data) and the local
 # vector/workflow stores are single-writer -- see that file's comment
 # on why replicas > 1 isn't safe without first swapping to a
 # multi-writer database and shared object storage.
@@ -16,8 +16,8 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: northstar-data
-  namespace: northstar
+  name: haie-data
+  namespace: haie
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -27,8 +27,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: northstar-vector-store
-  namespace: northstar
+  name: haie-vector-store
+  namespace: haie
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -38,8 +38,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: northstar-workflow-store
-  namespace: northstar
+  name: haie-workflow-store
+  namespace: haie
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -49,8 +49,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: northstar-audit-log
-  namespace: northstar
+  name: haie-audit-log
+  namespace: haie
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -60,8 +60,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: northstar-evaluation-runs
-  namespace: northstar
+  name: haie-evaluation-runs
+  namespace: haie
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:

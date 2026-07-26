@@ -19,13 +19,14 @@ from app.frontend.session import init_session
 st.set_page_config(page_title="About", page_icon="ℹ️", layout="wide")
 init_session()
 
-st.title("About the Northstar Enterprise AI Transformation Platform")
+st.title("About the HAIE Platform")
 
 st.info(
-    "Northstar Lending Corporation is a fictional company. This platform is a portfolio "
-    "project demonstrating an internal enterprise AI platform end to end -- knowledge ingestion "
-    "through grounded Q&A, advisor routing, human-checkpointed workflows, and evaluation -- "
-    "not a production system, and it does not connect to any real company's data."
+    "The HAIE Platform is the reference implementation of Human-AI Enterprise Engineering. "
+    "Northstar Lending Corporation is a fictional reference enterprise used to demonstrate it "
+    "end to end -- knowledge ingestion through grounded Q&A, advisor routing, "
+    "human-checkpointed workflows, and evaluation -- not a production system, and it does not "
+    "connect to any real company's data."
 )
 
 st.markdown("### What this platform does")

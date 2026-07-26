@@ -1,4 +1,4 @@
-# Prometheus scrape config for the Northstar platform's local/portfolio
+# Prometheus scrape config for the HAIE Platform's local/portfolio
 # deployment (Milestone 8). Referenced by the `observability` profile in
 # docker-compose.yml. Scrapes the FastAPI container's unauthenticated
 # GET /metrics endpoint -- restrict network access to this port at the
@@ -9,7 +9,7 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: northstar-api
+  - job_name: haie-api
     static_configs:
       - targets: ["api:8000"]
     metrics_path: /metrics

@@ -1,8 +1,8 @@
 {
-  "title": "Northstar Platform Health",
+  "title": "HAIE Platform Health",
   "description": "API availability, readiness, request volume, latency, error rate, provider/vector-store status. Prometheus datasource scraping GET /metrics.",
   "schemaVersion": 39,
-  "tags": ["northstar", "platform-health"],
+  "tags": ["haie", "platform-health"],
   "time": { "from": "now-6h", "to": "now" },
   "refresh": "30s",
   "panels": [

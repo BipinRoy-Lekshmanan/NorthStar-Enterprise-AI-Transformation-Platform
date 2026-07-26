@@ -130,10 +130,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Northstar Enterprise AI Transformation Platform",
+        title="HAIE Platform",
         description=(
-            "Internal reference platform providing grounded engineering and AI-transformation "
-            "guidance over Northstar Lending Corporation's (fictional) internal knowledge base. "
+            "The reference implementation of Human-AI Enterprise Engineering, providing grounded "
+            "engineering and AI-transformation guidance, evaluated against NorthStar Lending "
+            "Corporation's (fictional) internal knowledge base as its reference enterprise. "
             "Human-controlled, non-autonomous, and not authorized to execute production actions."
         ),
         version=APP_VERSION,

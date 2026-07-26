@@ -21,21 +21,23 @@ import streamlit as st
 from app.frontend.api_client import ApiClientError
 from app.frontend.session import get_api_client, get_current_user, init_session, set_api_key
 
-st.set_page_config(page_title="Northstar Enterprise AI Platform", page_icon="\U0001F3E6", layout="wide")
+st.set_page_config(page_title="HAIE Platform", page_icon="\U0001F3E6", layout="wide")
 
 init_session()
 
-st.title("Northstar Enterprise AI Transformation Platform")
+st.title("HAIE Platform")
 st.caption(
-    "Portfolio reference implementation. Northstar Lending Corporation is a fictional company -- "
-    "this platform is not connected to any real enterprise system."
+    "The Reference Implementation of Human-AI Enterprise Engineering. Northstar Lending "
+    "Corporation is a fictional reference enterprise -- this platform is not connected to any "
+    "real enterprise system."
 )
 
 st.markdown(
-    "The platform provides grounded engineering and AI-transformation guidance using Northstar "
-    "Lending Corporation's internal standards, architecture documents, playbooks, and governance "
-    "materials. It is **human-controlled and non-autonomous** -- it never executes production "
-    "actions, deployments, or infrastructure changes."
+    "The platform provides grounded engineering and AI-transformation guidance, demonstrated "
+    "using Northstar Lending Corporation's internal standards, architecture documents, "
+    "playbooks, and governance materials as its reference enterprise. It is "
+    "**human-controlled and non-autonomous** -- it never executes production actions, "
+    "deployments, or infrastructure changes."
 )
 
 with st.sidebar:

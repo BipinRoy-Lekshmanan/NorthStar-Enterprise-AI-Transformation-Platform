@@ -25,8 +25,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 FROM python:3.11-slim AS runtime
 
-RUN groupadd --gid 1000 northstar \
-    && useradd --uid 1000 --gid northstar --create-home --shell /usr/sbin/nologin northstar
+RUN groupadd --gid 1000 haie \
+    && useradd --uid 1000 --gid haie --create-home --shell /usr/sbin/nologin haie
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
@@ -38,9 +38,9 @@ WORKDIR /app
 COPY app/__init__.py ./app/__init__.py
 COPY app/frontend/ ./app/frontend/
 
-RUN chown -R northstar:northstar /app
+RUN chown -R haie:haie /app
 
-USER northstar
+USER haie
 
 EXPOSE 8501
 

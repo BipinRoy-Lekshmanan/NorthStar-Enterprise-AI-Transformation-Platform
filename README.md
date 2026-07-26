@@ -1,14 +1,71 @@
-# Northstar Enterprise AI Transformation Platform
+# HAIE Platform
 
-An Enterprise AI Transformation Platform being built for **Northstar Lending
-Corporation** (a fictional digital lending company) on top of its Markdown
-enterprise knowledge base — covering corporate strategy, business model,
-architecture, and engineering standards.
+**The Reference Implementation of Human-AI Enterprise Engineering**
 
-The long-term platform will provide enterprise RAG, specialized engineering
-advisors, architecture review support, AI governance, DevSecOps guidance,
-testing/release advisors, incident response assistance, and evaluation /
-observability. It is being built incrementally, milestone by milestone.
+An enterprise AI transformation platform — enterprise RAG, specialized
+engineering advisors, architecture review support, AI governance,
+DevSecOps guidance, testing/release advisors, incident response
+assistance, and evaluation/observability — built incrementally,
+milestone by milestone, and hardened for real operations.
+
+## Platform vs. reference enterprise
+
+The HAIE Platform is general-purpose: nothing in its code, API, or
+workflows is specific to any one company. To demonstrate and test it
+end to end, it's evaluated against a **reference enterprise** —
+**NorthStar Lending Corporation**, a fictional mid-sized digital
+lending company with its own knowledge base, sample data, workflows,
+personas, and test cases. The two evolve independently:
+
+```
+HAIE Platform
+│
+├── Platform            (app/config, app/rag, app/agents, app/workflows, ...)
+├── Resilience & ops     (app/resilience, app/db, app/operations, app/release)
+├── HAIR                 Human–AI Reference Architecture (this codebase's design)
+├── HAIO                 Human–AI Operating Model (RBAC, audit, approvals, workflows)
+└── Reference Enterprise
+      │
+      └── NorthStar Lending Corporation (fictional)
+            ├── Knowledge base    (enterprise_knowledge_base/)
+            ├── Sample data       (data/, examples/)
+            ├── Workflows         (loan/architecture/incident review scenarios)
+            ├── Tests             (tests/)
+            └── Personas          (data/auth/ roles: viewer/engineer/reviewer/administrator)
+```
+
+Every "Northstar"/"NorthStar Lending" mention elsewhere in this README
+and in `enterprise_knowledge_base/` refers to this reference enterprise
+— the demonstration environment — not the platform itself. If this
+project is published or cited, the intended framing is: *"The HAIE
+Platform was evaluated using a reference enterprise, NorthStar Lending,
+a fictional mid-sized lending institution designed to represent
+realistic enterprise workflows."*
+
+## Future evolution
+
+As the platform matures, the surrounding ecosystem this codebase is
+one node of naturally becomes:
+
+```
+HAIE (Human–AI Enterprise Engineering)
+        │
+        ├── HAIE Manifesto
+        ├── HAIE Body of Knowledge
+        ├── HAIR   Human–AI Reference Architecture
+        ├── HAIO   Human–AI Operating Model
+        ├── HAIG   Human–AI Governance Framework
+        ├── HAIA   Human–AI Agent Architecture (future)
+        ├── HAIX   Human–AI Experience (future)
+        └── HAIE Platform   Reference implementation (this repository)
+```
+
+This repository is, and will remain, the **HAIE Platform** node: a
+concrete, runnable reference implementation — not the Manifesto, Body
+of Knowledge, or governance framework themselves, which would be
+separate, non-code artifacts if they materialize. Nothing above is
+committed or scheduled; it's the natural shape the ecosystem takes if
+the platform continues to mature past Milestone 8.
 
 ## Status
 

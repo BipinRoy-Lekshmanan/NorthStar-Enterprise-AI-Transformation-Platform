@@ -1,8 +1,8 @@
 {
-  "title": "Northstar Knowledge Operations",
+  "title": "HAIE Knowledge Operations",
   "description": "Indexed document/chunk counts, ingestion duration, indexing failures, last successful update. Prometheus datasource scraping GET /metrics.",
   "schemaVersion": 39,
-  "tags": ["northstar", "knowledge-operations"],
+  "tags": ["haie", "knowledge-operations"],
   "time": { "from": "now-7d", "to": "now" },
   "refresh": "5m",
   "panels": [
